@@ -41,6 +41,9 @@ type Player struct {
 	// computed metrics
 	KD                       float64 `json:"kd"`
 	ADR                      float64 `json:"adr"`
+	KPR                      float64 `json:"kpr"`
+	DPR                      float64 `json:"dpr"`
+	APR                      float64 `json:"apr"`
 	KAST                     float64 `json:"kast"`
 	HSPercent                float64 `json:"hs_percent"`
 	TradeKillOpportunities   int     `json:"trade_kill_opportunities"`
@@ -48,8 +51,9 @@ type Player struct {
 	TradeKills               int     `json:"trade_kills"` // success
 	TradedDeathOpportunities int     `json:"traded_death_opportunities"`
 	TradedDeathAttempts      int     `json:"traded_death_attempts"`
-	TradedDeaths             int     `json:"traded_deaths"` // success
-	Rating1                  float64 `json:"hltv_rating_1"` // HLTV 1.0 Rating
+	TradedDeaths             int     `json:"traded_deaths"`   // success
+	Rating1                  float64 `json:"hltv_rating_1-0"` // HLTV 1.0 Rating
+	Rating2                  float64 `json:"hltv_rating_2-0"` // HLTV 2.0 Rating (approximate)
 }
 
 type Round struct {

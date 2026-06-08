@@ -16,7 +16,7 @@ analyze-random:
     set -euo pipefail
     demo="$(ls {{demo_dir}}/*.dem | shuf -n1)"
     echo "Analyzing $demo..." >&2
-    go run ./cmd/demolens analyze "$demo"
+    time go run ./cmd/demolens analyze "$demo"
 
 test:
     go test ./...

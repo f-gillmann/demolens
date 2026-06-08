@@ -14,6 +14,9 @@ func Compute(m *model.Match) {
 		p.KD = killDeathRatio(*p)
 		p.KAST = kast[p.SteamID]
 		p.ADR = averageDamagePerRound(*p, rounds)
+		p.KPR = averageKillsPerRound(*p, rounds)
+		p.DPR = averageDeathsPerRound(*p, rounds)
+		p.APR = averageAssistsPerRound(*p, rounds)
 		p.HSPercent = headshotPercent(*p)
 		if tradeKill := trades[p.SteamID]; tradeKill != nil {
 			p.TradeKillOpportunities = tradeKill.killOpportunity
@@ -24,5 +27,6 @@ func Compute(m *model.Match) {
 			p.TradedDeaths = tradeKill.deathSuccess
 		}
 		p.Rating1 = ratingHLTV1(*p, rounds, multiKills[p.SteamID])
+		p.Rating2 = ratingHLTV2(p.KAST, p.KPR, p.DPR, p.ADR, p.APR)
 	}
 }
