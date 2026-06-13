@@ -3,10 +3,20 @@ package metrics
 import "github.com/f-gillmann/demolens/model"
 
 func Compute(m *model.Match) {
-	rounds := float64(m.Meta.TotalRounds)
+	aggregateRounds(m)
+
+	rounds := float64(len(m.Rounds))
 	multiKills := multiKillHistograms(m.Rounds)
 	kast := kastValues(m)
 	trades := tradeStats(m)
+	weapons := weaponStats(m)
+	killTypes := killTypeCounts(m)
+
+	computeOpenings(m)
+	computeClutches(m)
+	accuracyStats(m)
+
+	m.FlashMatrix = flashMatrix(m)
 
 	for i := range m.Players {
 		p := &m.Players[i]
@@ -28,5 +38,20 @@ func Compute(m *model.Match) {
 		}
 		p.Rating1 = ratingHLTV1(*p, rounds, multiKills[p.SteamID])
 		p.Rating2 = ratingHLTV2(p.KAST, p.KPR, p.DPR, p.ADR, p.APR)
+
+		h := multiKills[p.SteamID]
+		p.MultiKills = model.MultiKills{K1: h[1], K2: h[2], K3: h[3], K4: h[4], K5: h[5]}
+		if kt, ok := killTypes[p.SteamID]; ok {
+			p.NoScopeKills = kt.noScope
+			p.WallbangKills = kt.wallbang
+			p.CollateralKills = kt.collateral
+		}
+		if ws := weapons[p.SteamID]; ws != nil {
+			p.WeaponStats = ws
+		} else {
+			p.WeaponStats = map[string]model.WeaponStat{}
+		}
+
+		computeUtilityAverages(p)
 	}
 }

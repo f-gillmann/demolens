@@ -8,8 +8,8 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
-// damageEvent maps a demoinfocs PlayerHurt event into our per-round damage
-// record, with the time elapsed since the round went live.
+// damageEvent turns a PlayerHurt into our damage record. into is time since the
+// round went live.
 func damageEvent(e events.PlayerHurt, into time.Duration) model.Damage {
 	d := model.Damage{
 		TimeMicroseconds: into.Microseconds(),
@@ -49,6 +49,8 @@ func damageType(w *common.Equipment) string {
 	switch w.Class() {
 	case common.EqClassPistols, common.EqClassSMG, common.EqClassHeavy, common.EqClassRifle:
 		return "bullet"
+	case common.EqClassGrenade:
+		return "grenade_impact"
 	default:
 		return "other"
 	}

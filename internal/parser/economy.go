@@ -6,7 +6,7 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 )
 
-// roundEconomy captures each side's buy when round goes live.
+// roundEconomy snapshots each side's buy as the round goes live.
 func roundEconomy(gs dem.GameState) model.RoundEconomy {
 	return model.RoundEconomy{
 		CT: teamEconomy(gs.Participants().TeamMembers(common.TeamCounterTerrorists)),

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// cs2Magic is the file stamp at the start of every CS2 demo
+// every CS2 demo starts with this stamp.
 const cs2Magic = "PBDEMS2"
 
 type Info struct {
@@ -16,7 +16,9 @@ type Info struct {
 	FileHash string
 }
 
-// Validate validates the CS2 demo header and returns the format stamp and SHA-256
+// Validate reads the header, makes sure it's a CS2 demo, and hashes the whole
+// stream. The hash is what we use to identify a demo, the header bytes are
+// folded in too.
 func Validate(r io.Reader) (Info, error) {
 	header := make([]byte, 8)
 	if _, err := io.ReadFull(r, header); err != nil {

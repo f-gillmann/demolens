@@ -2,8 +2,8 @@ package metrics
 
 import "github.com/f-gillmann/demolens/model"
 
-// kastValues returns each player's KAST percentage (0-100):
-// the share of rounds in which they got a Kill, Assist, Survived, or were Traded.
+// kastValues returns KAST per player as 0-100. that's the fraction of rounds
+// where they did at least one of: kill, assist, survive, or got traded.
 func kastValues(m *model.Match) map[uint64]float64 {
 	totalRounds := len(m.Rounds)
 	if totalRounds == 0 {
@@ -17,11 +17,11 @@ func kastValues(m *model.Match) map[uint64]float64 {
 		idx := newRoundIndex(r)
 		for id := range team {
 			switch {
-			case idx.killers[id] || idx.assisters[id]: // Kill or Assist
+			case idx.killers[id] || idx.assisters[id]: // K or A
 				credit[id]++
-			case !idx.died[id]: // Survived
+			case !idx.died[id]: // S
 				credit[id]++
-			case idx.traded(id, team): // Traded
+			case idx.traded(id, team): // T
 				credit[id]++
 			}
 		}

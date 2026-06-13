@@ -3,12 +3,13 @@ module github.com/f-gillmann/demolens
 go 1.26.3
 
 require (
+	github.com/golang/geo v0.0.0-20260605061815-58f45aa500f1
 	github.com/markus-wa/demoinfocs-golang/v5 v5.2.0
+	github.com/qmuntal/gltf v0.28.0
 	github.com/spf13/cobra v1.10.2
 )
 
 require (
-	github.com/golang/geo v0.0.0-20260605061815-58f45aa500f1 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/markus-wa/go-unassert v0.1.3 // indirect

@@ -4,27 +4,34 @@ import (
 	"time"
 
 	"github.com/f-gillmann/demolens/model"
+	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
-// roundKill maps a demoinfocs Kill event into our per-round kill record,
-// with the time elapsed since the round went live.
+// roundKill turns a Kill event into our kill record. into is time since the
+// round went live.
 func roundKill(e events.Kill, into time.Duration) model.RoundKill {
 	rk := model.RoundKill{
 		TimeMicroseconds: into.Microseconds(),
 		Headshot:         e.IsHeadshot,
 		Wallbang:         e.IsWallBang(),
+		Penetration:      e.PenetratedObjects,
 		ThroughSmoke:     e.ThroughSmoke,
 		NoScope:          e.NoScope,
+		Distance:         float64(e.Distance),
+		AttackerBlind:    e.AttackerBlind,
 	}
 	if e.Killer != nil {
 		rk.Killer = e.Killer.SteamID64
 		rk.KillerPosition = positionOf(e.Killer)
+		rk.KillerAirborne = e.Killer.IsAirborne()
 	}
 	if e.Victim != nil {
 		rk.Victim = e.Victim.SteamID64
 		rk.VictimPosition = positionOf(e.Victim)
+		rk.VictimBlind = e.Victim.IsBlinded()
+		rk.VictimAirborne = e.Victim.IsAirborne()
 	}
 	if e.Assister != nil && !e.AssistedFlash {
 		rk.Assister = e.Assister.SteamID64
@@ -46,6 +53,17 @@ func sideString(team common.Team) string {
 	}
 }
 
+func bombSite(s events.Bombsite) string {
+	switch s {
+	case events.BombsiteA:
+		return "A"
+	case events.BombsiteB:
+		return "B"
+	default:
+		return ""
+	}
+}
+
 func reasonString(reason events.RoundEndReason) string {
 	switch reason {
 	case events.RoundEndReasonTargetBombed:
@@ -61,12 +79,46 @@ func reasonString(reason events.RoundEndReason) string {
 	}
 }
 
-// positionOf returns a player's world position (death spot for a victim at the
-// kill event), or the zero Position if the player is nil.
+// positionOf is a player's world position, which for a victim at the kill event
+// is the death spot. Zero Position when p is nil.
 func positionOf(p *common.Player) model.Position {
 	if p == nil {
 		return model.Position{}
 	}
-	v := p.Position()
-	return model.Position{X: v.X, Y: v.Y, Z: v.Z}
+	return toPosition(p.Position())
+}
+
+// roundRoster makes a fresh RoundPlayer for everyone playing, keyed by SteamID,
+// with side and freeze-time-end economy filled in. The parser accumulates the
+// round's stats onto these.
+func roundRoster(gs dem.GameState) map[uint64]*model.RoundPlayer {
+	roster := map[uint64]*model.RoundPlayer{}
+	for _, pl := range gs.Participants().Playing() {
+		side := sideString(pl.Team)
+		if side == "" {
+			continue
+		}
+		spent := pl.MoneySpentThisRound()
+		roster[pl.SteamID64] = &model.RoundPlayer{
+			SteamID:        pl.SteamID64,
+			Side:           side,
+			MoneySpent:     spent,
+			StartMoney:     pl.Money() + spent,
+			EquipmentValue: pl.EquipmentValueFreezeTimeEnd(),
+			Loadout:        loadout(pl),
+		}
+	}
+	return roster
+}
+
+// loadout is the weapons and util a player walks into the round with.
+func loadout(pl *common.Player) []string {
+	var items []string
+	for _, w := range pl.Weapons() {
+		items = append(items, w.String())
+	}
+	if pl.HasDefuseKit() {
+		items = append(items, "Defuse Kit")
+	}
+	return items
 }

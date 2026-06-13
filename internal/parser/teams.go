@@ -6,39 +6,25 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 )
 
-// captureTeams records each playing player's team id + clan name for the current round.
-func captureTeams(gs dem.GameState, players map[uint64]*model.Player) {
-	ctClan := gs.TeamCounterTerrorists().ClanName()
-	tClan := gs.TeamTerrorists().ClanName()
-
+// captureTeams pins each player to a stable team id (A/B) and clan name based on
+// the side they started on. Sides flip at halftime, so we set identity once and
+// leave it alone. sideToTeam is the current side-to-team mapping.
+func captureTeams(gs dem.GameState, players map[uint64]*model.Player, sideToTeam map[common.Team]string) {
 	for _, pl := range gs.Participants().Playing() {
 		rec, ok := players[pl.SteamID64]
 		if !ok {
 			rec = &model.Player{SteamID: pl.SteamID64, Name: pl.Name}
 			players[pl.SteamID64] = rec
 		}
-		switch pl.Team {
-		case common.TeamCounterTerrorists:
-			rec.Team, rec.TeamName = "A", ctClan
-		case common.TeamTerrorists:
-			rec.Team, rec.TeamName = "B", tClan
+		if rec.Team == "" {
+			rec.Team = sideToTeam[pl.Team]
+			if pl.TeamState != nil {
+				rec.TeamName = pl.TeamState.ClanName()
+			}
 		}
+		// Valve MM rank, 0 on third-party and GOTV demos. Last value seen wins.
+		rec.Rank = pl.Rank()
+		rec.RankType = pl.RankType()
+		rec.CompetitiveWins = pl.CompetitiveWins()
 	}
-}
-
-// aliveSnapshot records the position of every player alive at the current tick,
-// used for proximity-based metrics (e.g. trade opportunities).
-func aliveSnapshot(gs dem.GameState) []model.AlivePlayer {
-	var alive []model.AlivePlayer
-	for _, pl := range gs.Participants().Playing() {
-		if !pl.IsAlive() {
-			continue
-		}
-		pos := pl.Position()
-		alive = append(alive, model.AlivePlayer{
-			SteamID:  pl.SteamID64,
-			Position: model.Position{X: pos.X, Y: pos.Y, Z: pos.Z},
-		})
-	}
-	return alive
 }

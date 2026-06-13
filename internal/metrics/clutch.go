@@ -1,0 +1,111 @@
+package metrics
+
+import "github.com/f-gillmann/demolens/model"
+
+// snapshot of when a side dropped to its last man.
+type clutchStart struct {
+	side      string
+	opponents int   // enemies still up at that moment
+	startTime int64 // round time it kicked off
+}
+
+// finds 1vN per round (one side down to its last player, enemies left alive),
+// stamps the clutch onto the clutcher's RoundPlayer and rolls it into the
+// per-side totals. note a 1v1 fires a clutch for both sides.
+func computeClutches(m *model.Match) {
+	idx := playerIndex(m)
+
+	for ri := range m.Rounds {
+		r := &m.Rounds[ri]
+		side := sideMap(*r)
+
+		alive := map[string]map[uint64]bool{"CT": {}, "T": {}}
+		for _, rp := range r.Players {
+			if rp.Side == "CT" || rp.Side == "T" {
+				alive[rp.Side][rp.SteamID] = true
+			}
+		}
+
+		flagged := map[string]bool{}
+		starts := map[uint64]clutchStart{} // clutcher -> situation
+
+		for _, k := range r.Kills {
+			s := side[k.Victim]
+			if s != "CT" && s != "T" {
+				continue
+			}
+			delete(alive[s], k.Victim)
+
+			other := opposite(s)
+			if !flagged[s] && len(alive[s]) == 1 && len(alive[other]) >= 1 {
+				flagged[s] = true
+				var last uint64
+				for id := range alive[s] {
+					last = id
+				}
+				starts[last] = clutchStart{side: s, opponents: len(alive[other]), startTime: k.TimeMicroseconds}
+			}
+		}
+
+		for clutcher, start := range starts {
+			c := buildClutch(r, clutcher, start)
+			if rp := roundPlayer(r, clutcher); rp != nil {
+				rp.Clutch = &c
+			}
+			addClutch(idx[clutcher], start.side, c)
+		}
+	}
+}
+
+// counts kills the clutcher got during the clutch, then works out the outcome
+// from the round winner and whether they lived.
+func buildClutch(r *model.Round, clutcher uint64, start clutchStart) model.Clutch {
+	kills, died := 0, false
+	for _, k := range r.Kills {
+		if k.Killer == clutcher && k.TimeMicroseconds >= start.startTime {
+			kills++
+		}
+		if k.Victim == clutcher {
+			died = true
+		}
+	}
+	won := r.WinnerSide == start.side
+	return model.Clutch{
+		Opponents: start.opponents,
+		Kills:     kills,
+		Won:       won,
+		Saved:     !won && !died,
+	}
+}
+
+// bumps the outcome into both the overall and the per-side tally.
+func addClutch(p *model.Player, side string, c model.Clutch) {
+	if p == nil {
+		return
+	}
+	for _, s := range []*model.ClutchStats{&p.ClutchOverall, clutchForSide(p, side)} {
+		if s == nil {
+			continue
+		}
+		s.Kills += c.Kills
+		switch {
+		case c.Won:
+			s.Won++
+		case c.Saved:
+			s.Saved++
+		default:
+			s.Lost++
+		}
+	}
+}
+
+func clutchForSide(p *model.Player, side string) *model.ClutchStats {
+	switch side {
+	case "CT":
+		return &p.ClutchCT
+	case "T":
+		return &p.ClutchT
+	default:
+		return nil
+	}
+}
