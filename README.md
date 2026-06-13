@@ -62,3 +62,7 @@ The estimated ones (spotted accuracy, counter-strafe, spray, time-to-damage, cro
 ## Map data
 
 No map geometry ships with demolens. CS2 maps are Valve's assets, so you pull collision meshes from your own install with `extract-map`. Full setup in [docs/maps.md](docs/maps.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
