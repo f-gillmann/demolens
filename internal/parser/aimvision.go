@@ -13,13 +13,18 @@ import (
 // We sample the silhouette at head/chest/feet, both dead centre and at the
 // left/right edges perpendicular to the sightline. So a shoulder or gun poking
 // round a corner still counts.
+var losDZ = [3]float64{0, -20, -55}
+
 func losClear(mesh *geom.Mesh, eyeFrom, eyeTo r3.Vector) bool {
 	perp := eyeTo.Sub(eyeFrom).Cross(r3.Vector{X: 0, Y: 0, Z: 1})
 	if perp.Norm() > 1e-6 {
 		perp = perp.Normalize().Mul(16) // approx half a player width
 	}
-	for _, lat := range []r3.Vector{{}, perp, perp.Mul(-1)} {
-		for _, dz := range []float64{0, -20, -55} {
+	lats := [3]r3.Vector{{}, perp, perp.Mul(-1)}
+	for i := 0; i < 3; i++ {
+		lat := lats[i]
+		for j := 0; j < 3; j++ {
+			dz := losDZ[j]
 			t := r3.Vector{X: eyeTo.X + lat.X, Y: eyeTo.Y + lat.Y, Z: eyeTo.Z + dz}
 			if !mesh.Occluded(eyeFrom, t) {
 				return true

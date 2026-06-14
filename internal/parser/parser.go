@@ -6,8 +6,10 @@ import (
 	"errors"
 	"io"
 	"math"
+	"runtime"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/f-gillmann/demolens/internal/geom"
@@ -89,6 +91,22 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 	ttdSamples := map[uint64][]float64{}       // ms samples per shooter, averaged at the end
 	ttdByVictim := map[[2]uint64][]float64{}   // same samples split by victim for the duel matrix
 	crosshair := map[uint64][]float64{}        // crosshair-move samples in deg
+
+	// reused across frames by the sighting handler so the los raycasts can run in
+	// parallel without a per-frame alloc. live: alive players' eye+view. cands: the
+	// frustum-passing pairs whose expensive los/smoke check is deferred to pass 2.
+	type pv struct {
+		id        uint64
+		team      common.Team
+		eye, view r3.Vector
+	}
+	type cand struct {
+		en         *engagement
+		sEye, eEye r3.Vector
+		vis        bool
+	}
+	live := make([]pv, 0, 10)
+	cands := make([]cand, 0, 32)
 
 	// finalizeSpray closes a finished spray run. Needs 3+ consecutive shots of the
 	// same auto weapon. Records recoil deviation for every such spray, plus the hit
@@ -792,14 +810,19 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 			return
 		}
 		now := parsed.CurrentTime()
-		// pull each alive player's eye pos + view dir once up front, so the pair
-		// loop is O(n) reads instead of O(n^2).
-		type pv struct {
-			id        uint64
-			team      common.Team
-			eye, view r3.Vector
+		// notVisible applies the not-seen TTD branch: drop the visibility window and,
+		// if the sighting has gone quiet past TTDGapMs, reset the clock.
+		notVisible := func(en *engagement) {
+			en.visSince = 0
+			if (en.tPending || en.consumed) &&
+				float64((now-en.lastSeen).Microseconds())/1000 > cal.TTDGapMs {
+				en.tPending, en.consumed = false, false
+			}
 		}
-		live := make([]pv, 0, 10)
+
+		// pass 1 (sequential): pull each alive player's eye pos + view dir once up
+		// front, so the pair loop is O(n) reads instead of O(n^2). reuse the buffer.
+		live = live[:0]
 		for _, pl := range parsed.GameState().Participants().Playing() {
 			if !pl.IsAlive() {
 				continue
@@ -808,6 +831,7 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 				live = append(live, pv{pl.SteamID64, pl.Team, eye, viewVector(pl)})
 			}
 		}
+		cands = cands[:0]
 		for i := range live {
 			s := live[i]
 			for j := range live {
@@ -839,25 +863,72 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 				// to first-visible. brief look-aways don't break it. once the enemy is
 				// unseen for TTDGapMs the sighting resets, so re-peeking someone you just
 				// saw isn't counted as a fresh duel.
-				visible := enemyInFrustum(s.view, dir, cal.TTDFovDeg) &&
-					mesh != nil && losClear(mesh, s.eye, e.eye) &&
-					!smokeBlocked(s.eye, e.eye, activeSmokes)
-				if visible {
-					if en.visSince == 0 {
-						en.visSince = now
-					}
-					if !en.tPending && !en.consumed &&
-						float64((now-en.visSince).Microseconds())/1000 >= cal.TTDDebounceMs {
-						en.tPending, en.seeTime = true, en.visSince
-					}
-					en.lastSeen = now
+				// the cheap frustum/mesh gate stays here; the expensive los+smoke check
+				// is deferred to pass 2 so it can run concurrently.
+				ttdCand := enemyInFrustum(s.view, dir, cal.TTDFovDeg) && mesh != nil
+				if ttdCand {
+					cands = append(cands, cand{en: en, sEye: s.eye, eEye: e.eye})
 				} else {
-					en.visSince = 0
-					if (en.tPending || en.consumed) &&
-						float64((now-en.lastSeen).Microseconds())/1000 > cal.TTDGapMs {
-						en.tPending, en.consumed = false, false
-					}
+					notVisible(en)
 				}
+			}
+		}
+
+		// pass 2 (parallel): the los raycast + smoke test for each cand. mesh and
+		// activeSmokes are read-only for the whole handler, so concurrent reads are
+		// safe; each goroutine only writes its own disjoint cand.vis indices.
+		if len(cands) >= 16 {
+			workers := runtime.GOMAXPROCS(0)
+			if workers > len(cands) {
+				workers = len(cands)
+			}
+			chunk := (len(cands) + workers - 1) / workers
+			var wg sync.WaitGroup
+			for w := 0; w < workers; w++ {
+				lo := w * chunk
+				if lo >= len(cands) {
+					break
+				}
+				hi := lo + chunk
+				if hi > len(cands) {
+					hi = len(cands)
+				}
+				wg.Add(1)
+				go func(lo, hi int) {
+					defer wg.Done()
+					for k := lo; k < hi; k++ {
+						c := &cands[k]
+						c.vis = losClear(mesh, c.sEye, c.eEye) &&
+							!smokeBlocked(c.sEye, c.eEye, activeSmokes)
+					}
+				}(lo, hi)
+			}
+			wg.Wait()
+		} else {
+			for k := range cands {
+				c := &cands[k]
+				c.vis = losClear(mesh, c.sEye, c.eEye) &&
+					!smokeBlocked(c.sEye, c.eEye, activeSmokes)
+			}
+		}
+
+		// pass 3 (sequential): the TTD state machine over each cand. each en is
+		// touched once for TTD this frame (a pair is a cand or a non-cand, never
+		// both), so pair order doesn't change the final state.
+		for k := range cands {
+			c := &cands[k]
+			en := c.en
+			if c.vis {
+				if en.visSince == 0 {
+					en.visSince = now
+				}
+				if !en.tPending && !en.consumed &&
+					float64((now-en.visSince).Microseconds())/1000 >= cal.TTDDebounceMs {
+					en.tPending, en.seeTime = true, en.visSince
+				}
+				en.lastSeen = now
+			} else {
+				notVisible(en)
 			}
 		}
 	})
