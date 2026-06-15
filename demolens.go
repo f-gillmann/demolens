@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/f-gillmann/demolens/internal/demofile"
+	"github.com/f-gillmann/demolens/internal/maps"
 	"github.com/f-gillmann/demolens/internal/metrics"
 	"github.com/f-gillmann/demolens/internal/parser"
 	"github.com/f-gillmann/demolens/model"
@@ -15,6 +16,9 @@ type Options = parser.Options
 
 // Calibration re-exports parser.Calibration, the tunable aim-stat thresholds.
 type Calibration = parser.Calibration
+
+// ExtractMapParams re-exports maps.Params, the map extraction inputs.
+type ExtractMapParams = maps.Params
 
 // DefaultCalibration is the tuned defaults.
 func DefaultCalibration() Calibration { return parser.DefaultCalibration() }
@@ -35,3 +39,6 @@ func Analyze(r io.Reader, opts Options) (*model.Match, error) {
 func Validate(r io.Reader) (demofile.Info, error) {
 	return demofile.Validate(r)
 }
+
+// ExtractMap writes a map's .tri collision file and returns the path and triangle count.
+func ExtractMap(p ExtractMapParams) (string, int, error) { return maps.Extract(p) }

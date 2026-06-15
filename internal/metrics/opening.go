@@ -50,10 +50,7 @@ func addOpening(p *model.Player, side string, won, traded bool) {
 	if p == nil {
 		return
 	}
-	for _, s := range []*model.OpeningStats{&p.OpeningOverall, openingForSide(p, side)} {
-		if s == nil {
-			continue
-		}
+	applyToSides(&p.OpeningOverall, openingForSide(p, side), func(s *model.OpeningStats) {
 		s.Attempts++
 		if won {
 			s.Kills++
@@ -63,16 +60,5 @@ func addOpening(p *model.Player, side string, won, traded bool) {
 				s.Traded++
 			}
 		}
-	}
-}
-
-func openingForSide(p *model.Player, side string) *model.OpeningStats {
-	switch side {
-	case "CT":
-		return &p.OpeningCT
-	case "T":
-		return &p.OpeningT
-	default:
-		return nil
-	}
+	})
 }

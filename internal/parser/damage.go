@@ -17,6 +17,7 @@ func damageEvent(e events.PlayerHurt, into time.Duration) model.Damage {
 		ArmorDamage:      e.ArmorDamageTaken,
 		HitGroup:         hitGroupString(e.HitGroup),
 	}
+
 	if e.Attacker != nil {
 		d.Attacker = e.Attacker.SteamID64
 	}
@@ -27,6 +28,7 @@ func damageEvent(e events.PlayerHurt, into time.Duration) model.Damage {
 		d.Weapon = e.Weapon.String()
 		d.DamageType = damageType(e.Weapon)
 	}
+
 	return d
 }
 

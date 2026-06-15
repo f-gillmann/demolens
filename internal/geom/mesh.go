@@ -68,6 +68,7 @@ func Load(path string) (*Mesh, error) {
 			c: r3.Vector{X: float64(v[6]), Y: float64(v[7]), Z: float64(v[8])},
 		}
 	}
+
 	m.buildBVH()
 	return m, nil
 }
@@ -120,11 +121,13 @@ func (t triangle) blocks(orig, dir r3.Vector) bool {
 	if u < 0 || u > 1 {
 		return false
 	}
+
 	qvec := tvec.Cross(edge1)
 	v := dir.Dot(qvec) * inv
 	if v < 0 || u+v > 1 {
 		return false
 	}
+
 	hit := edge2.Dot(qvec) * inv
 	// strictly inside the segment, endpoints don't count (shooter/target aren't walls)
 	return hit > epsilon && hit < 1-epsilon

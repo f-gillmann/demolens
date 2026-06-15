@@ -2,16 +2,15 @@ package metrics
 
 import "github.com/f-gillmann/demolens/model"
 
-// bullet accuracy = hits/shots. head accuracy = head hits / enemy hits, AWP left
-// out (the convention everyone uses, since one-tap snipes skew it).
+// Accuracy is hits/shots. Head accuracy excludes AWP per competitive convention.
 func accuracyStats(m *model.Match) {
 	team := teamMap(m)
 	idx := playerIndex(m)
-	type acc struct {
+	type accuracyStats struct {
 		hits, nonAWPHits, nonAWPHeadHits int
 		seen, seenNonAWP, seenHead       map[int64]bool // keyed on shot time so one bullet counts once
 	}
-	stats := map[uint64]*acc{}
+	stats := map[uint64]*accuracyStats{}
 
 	for _, r := range m.Rounds {
 		for _, d := range r.Damages {
@@ -21,11 +20,13 @@ func accuracyStats(m *model.Match) {
 			if team[d.Attacker] == team[d.Victim] { // skip teamdamage
 				continue
 			}
+
 			a := stats[d.Attacker]
 			if a == nil {
-				a = &acc{seen: map[int64]bool{}, seenNonAWP: map[int64]bool{}, seenHead: map[int64]bool{}}
+				a = &accuracyStats{seen: map[int64]bool{}, seenNonAWP: map[int64]bool{}, seenHead: map[int64]bool{}}
 				stats[d.Attacker] = a
 			}
+
 			// wallbangs/collaterals log a hit per victim but share a shot time.
 			// dedupe so it's still one shot.
 			t := d.TimeMicroseconds
@@ -33,6 +34,7 @@ func accuracyStats(m *model.Match) {
 				a.seen[t] = true
 				a.hits++
 			}
+
 			if d.Weapon != "AWP" {
 				if !a.seenNonAWP[t] {
 					a.seenNonAWP[t] = true
@@ -51,6 +53,7 @@ func accuracyStats(m *model.Match) {
 		if p == nil {
 			continue
 		}
+
 		if p.ShotsFired > 0 {
 			p.Accuracy = float64(a.hits) / float64(p.ShotsFired) * 100
 		}

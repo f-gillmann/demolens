@@ -1,13 +1,12 @@
-package parser
+// Package csdata holds static CS2 equipment data and weapon classification helpers.
+package csdata
 
 import (
-	"github.com/f-gillmann/demolens/model"
-	"github.com/golang/geo/r3"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 )
 
-// CS2 buy price per grenade, in dollars.
-var utilityPrice = map[common.EquipmentType]int{
+// UtilityPrice is the CS2 buy price per grenade, in dollars.
+var UtilityPrice = map[common.EquipmentType]int{
 	common.EqFlash:      200,
 	common.EqSmoke:      300,
 	common.EqHE:         300,
@@ -16,10 +15,10 @@ var utilityPrice = map[common.EquipmentType]int{
 	common.EqDecoy:      50,
 }
 
-// Max move speed in game units/sec for each weapon held. CS2 never networks
+// WeaponMaxSpeed is max move speed in game units/sec for each weapon held. CS2 never networks
 // velocity or speed caps, so we keep our own table and turn a killer's speed
 // into a per-weapon ratio for counter-strafe.
-var weaponMaxSpeed = map[common.EquipmentType]float64{
+var WeaponMaxSpeed = map[common.EquipmentType]float64{
 	common.EqP2000: 240, common.EqGlock: 240, common.EqP250: 240, common.EqDeagle: 230,
 	common.EqFiveSeven: 240, common.EqDualBerettas: 240, common.EqTec9: 240, common.EqCZ: 240,
 	common.EqUSP: 240, common.EqRevolver: 220,
@@ -35,24 +34,24 @@ var weaponMaxSpeed = map[common.EquipmentType]float64{
 // fallback run speed for anything not in weaponMaxSpeed
 const defaultMaxSpeed = 215.0
 
-// speedRatio normalises horizontal speed against the weapon's cap so one
+// SpeedRatio normalises horizontal speed against the weapon's cap so one
 // threshold works no matter which gun is held.
-func speedRatio(speed float64, w *common.Equipment) float64 {
+func SpeedRatio(speed float64, w *common.Equipment) float64 {
 	maxSpeed := defaultMaxSpeed
 	if w != nil {
-		if ms, ok := weaponMaxSpeed[w.Type]; ok {
+		if ms, ok := WeaponMaxSpeed[w.Type]; ok {
 			maxSpeed = ms
 		}
 	}
 	return speed / maxSpeed
 }
 
-// engineSpeed reads the player's horizontal speed straight off the entity.
+// EngineSpeed reads the player's horizontal speed straight off the entity.
 // m_flFrictionStashedSpeed is the 2D speed the engine stashes every tick for
 // friction. Velocity isn't networked in CS2 but this prop is, and it's exact,
 // so counter-strafe lines up with the engine's own threshold instead of a noisy
 // position delta. -1 when the prop isn't there.
-func engineSpeed(p *common.Player) float64 {
+func EngineSpeed(p *common.Player) float64 {
 	e := p.PlayerPawnEntity()
 	if e == nil {
 		return -1
@@ -63,27 +62,9 @@ func engineSpeed(p *common.Player) float64 {
 	return -1
 }
 
-// wrapDeg folds a degree delta into [-180, 180] so yaw diffs across the +/-180
-// seam don't blow up.
-func wrapDeg(d float64) float64 {
-	for d > 180 {
-		d -= 360
-	}
-	for d < -180 {
-		d += 360
-	}
-	return d
-}
-
-// running counter-strafe tally for one player over the match
-type counterStrafeAcc struct {
-	shots, stopped int
-	speedSum       float64
-}
-
-// guns we measure spray accuracy on: full-auto rifles, SMGs, LMGs. Snipers,
+// SprayWeapons holds guns we measure spray accuracy on: full-auto rifles, SMGs, LMGs. Snipers,
 // pistols and shotguns have no spray pattern so they're out.
-var sprayWeapons = map[common.EquipmentType]bool{
+var SprayWeapons = map[common.EquipmentType]bool{
 	common.EqAK47: true, common.EqM4A4: true, common.EqM4A1: true, common.EqGalil: true,
 	common.EqFamas: true, common.EqAUG: true, common.EqSG553: true,
 	common.EqMP9: true, common.EqMac10: true, common.EqBizon: true, common.EqUMP: true,
@@ -91,23 +72,23 @@ var sprayWeapons = map[common.EquipmentType]bool{
 	common.EqM249: true, common.EqNegev: true,
 }
 
-// full-auto gun, i.e. has a spray pattern
-func isSprayWeapon(w *common.Equipment) bool {
-	return w != nil && sprayWeapons[w.Type]
+// IsSprayWeapon marks full-auto gun, i.e. has a spray pattern
+func IsSprayWeapon(w *common.Equipment) bool {
+	return w != nil && SprayWeapons[w.Type]
 }
 
-// assault rifles, counter-strafe is rifle-only
-var rifleTypes = map[common.EquipmentType]bool{
+// RifleTypes marks assault rifles, counter-strafe is rifle-only
+var RifleTypes = map[common.EquipmentType]bool{
 	common.EqAK47: true, common.EqM4A4: true, common.EqM4A1: true, common.EqGalil: true,
 	common.EqFamas: true, common.EqAUG: true, common.EqSG553: true,
 }
 
-func isRifle(w *common.Equipment) bool {
-	return w != nil && rifleTypes[w.Type]
+func IsRifle(w *common.Equipment) bool {
+	return w != nil && RifleTypes[w.Type]
 }
 
-// isGun is true for actual gun shots, so not grenades, knife or zeus.
-func isGun(w *common.Equipment) bool {
+// IsGun is true for actual gun shots, so not grenades, knife or zeus.
+func IsGun(w *common.Equipment) bool {
 	if w == nil {
 		return false
 	}
@@ -117,46 +98,4 @@ func isGun(w *common.Equipment) bool {
 	default:
 		return false
 	}
-}
-
-// grenadeTypeString is the model-facing name for a grenade type.
-func grenadeTypeString(t common.EquipmentType) string {
-	switch t {
-	case common.EqFlash:
-		return "flash"
-	case common.EqSmoke:
-		return "smoke"
-	case common.EqHE:
-		return "he"
-	case common.EqMolotov:
-		return "molotov"
-	case common.EqIncendiary:
-		return "incendiary"
-	case common.EqDecoy:
-		return "decoy"
-	default:
-		return ""
-	}
-}
-
-// demoinfocs world vector to our Position
-func toPosition(v r3.Vector) model.Position {
-	return model.Position{X: v.X, Y: v.Y, Z: v.Z}
-}
-
-func grenadePosition(g *common.GrenadeProjectile) model.Position {
-	if g == nil {
-		return model.Position{}
-	}
-	return toPosition(g.Position())
-}
-
-// grenadeInventoryValue is the dollar value of nades a player is holding.
-// Non-grenades fall through utilityPrice as 0.
-func grenadeInventoryValue(p *common.Player) int {
-	value := 0
-	for _, w := range p.Weapons() {
-		value += utilityPrice[w.Type]
-	}
-	return value
 }

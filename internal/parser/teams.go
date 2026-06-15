@@ -16,12 +16,14 @@ func captureTeams(gs dem.GameState, players map[uint64]*model.Player, sideToTeam
 			rec = &model.Player{SteamID: pl.SteamID64, Name: pl.Name}
 			players[pl.SteamID64] = rec
 		}
+
 		if rec.Team == "" {
 			rec.Team = sideToTeam[pl.Team]
 			if pl.TeamState != nil {
 				rec.TeamName = pl.TeamState.ClanName()
 			}
 		}
+
 		// Valve MM rank, 0 on third-party and GOTV demos. Last value seen wins.
 		rec.Rank = pl.Rank()
 		rec.RankType = pl.RankType()

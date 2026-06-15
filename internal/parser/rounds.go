@@ -22,6 +22,7 @@ func roundKill(e events.Kill, into time.Duration) model.RoundKill {
 		Distance:         float64(e.Distance),
 		AttackerBlind:    e.AttackerBlind,
 	}
+
 	if e.Killer != nil {
 		rk.Killer = e.Killer.SteamID64
 		rk.KillerPosition = positionOf(e.Killer)
@@ -39,6 +40,7 @@ func roundKill(e events.Kill, into time.Duration) model.RoundKill {
 	if e.Weapon != nil {
 		rk.Weapon = e.Weapon.String()
 	}
+
 	return rk
 }
 
@@ -98,6 +100,7 @@ func roundRoster(gs dem.GameState) map[uint64]*model.RoundPlayer {
 		if side == "" {
 			continue
 		}
+
 		spent := pl.MoneySpentThisRound()
 		roster[pl.SteamID64] = &model.RoundPlayer{
 			SteamID:        pl.SteamID64,

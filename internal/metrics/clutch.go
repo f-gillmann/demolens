@@ -6,7 +6,7 @@ import "github.com/f-gillmann/demolens/model"
 type clutchStart struct {
 	side      string
 	opponents int   // enemies still up at that moment
-	startTime int64 // round time it kicked off
+	startTime int64 // round time when it kicked off
 }
 
 // finds 1vN per round (one side down to its last player, enemies left alive),
@@ -34,6 +34,7 @@ func computeClutches(m *model.Match) {
 			if s != "CT" && s != "T" {
 				continue
 			}
+
 			delete(alive[s], k.Victim)
 
 			other := opposite(s)
@@ -69,6 +70,7 @@ func buildClutch(r *model.Round, clutcher uint64, start clutchStart) model.Clutc
 			died = true
 		}
 	}
+
 	won := r.WinnerSide == start.side
 	return model.Clutch{
 		Opponents: start.opponents,
@@ -83,10 +85,7 @@ func addClutch(p *model.Player, side string, c model.Clutch) {
 	if p == nil {
 		return
 	}
-	for _, s := range []*model.ClutchStats{&p.ClutchOverall, clutchForSide(p, side)} {
-		if s == nil {
-			continue
-		}
+	applyToSides(&p.ClutchOverall, clutchForSide(p, side), func(s *model.ClutchStats) {
 		s.Kills += c.Kills
 		switch {
 		case c.Won:
@@ -96,16 +95,5 @@ func addClutch(p *model.Player, side string, c model.Clutch) {
 		default:
 			s.Lost++
 		}
-	}
-}
-
-func clutchForSide(p *model.Player, side string) *model.ClutchStats {
-	switch side {
-	case "CT":
-		return &p.ClutchCT
-	case "T":
-		return &p.ClutchT
-	default:
-		return nil
-	}
+	})
 }

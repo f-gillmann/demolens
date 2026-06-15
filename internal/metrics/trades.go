@@ -28,6 +28,7 @@ func newRoundIndex(round model.Round) roundIndex {
 		deathTime: map[uint64]int64{},
 		killerOf:  map[uint64]uint64{},
 	}
+
 	for _, kill := range round.Kills {
 		if kill.Killer != 0 {
 			idx.killers[kill.Killer] = true
@@ -75,7 +76,7 @@ type tradeCounts struct {
 func tradeStats(m *model.Match) map[uint64]*tradeCounts {
 	team := teamMap(m)
 	stats := map[uint64]*tradeCounts{}
-	get := func(id uint64) *tradeCounts {
+	getOrCreate := func(id uint64) *tradeCounts {
 		c := stats[id]
 		if c == nil {
 			c = &tradeCounts{}
@@ -91,7 +92,7 @@ func tradeStats(m *model.Match) map[uint64]*tradeCounts {
 				continue
 			}
 
-			var opp, att, succ bool
+			var opportunity, attempt, success bool
 			for _, mate := range death.AlivePlayers {
 				if mate.SteamID == victim || team[mate.SteamID] != team[victim] {
 					continue // victim's living teammates only
@@ -109,26 +110,27 @@ func tradeStats(m *model.Match) map[uint64]*tradeCounts {
 				// attempt: shot at any enemy inside the window
 				attempted := damagedAnyEnemy(round, mate.SteamID, team[mate.SteamID], team, deathTime, tradeWindowMicros)
 
-				c := get(mate.SteamID)
+				c := getOrCreate(mate.SteamID)
 				c.killOpportunity++
-				opp = true
+				opportunity = true
 				if attempted {
 					c.killAttempt++
-					att = true
+					attempt = true
 				}
 				if killed {
 					c.killSuccess++
-					succ = true
+					success = true
 				}
 			}
-			if opp {
-				get(victim).deathOpportunity++
+
+			if opportunity {
+				getOrCreate(victim).deathOpportunity++
 			}
-			if att {
-				get(victim).deathAttempt++
+			if attempt {
+				getOrCreate(victim).deathAttempt++
 			}
-			if succ {
-				get(victim).deathSuccess++
+			if success {
+				getOrCreate(victim).deathSuccess++
 			}
 		}
 	}

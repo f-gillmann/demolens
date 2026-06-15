@@ -130,6 +130,7 @@ func trisFromGLB(path string) ([][9]float32, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var tris [][9]float32
 	for _, m := range doc.Meshes {
 		// this mesh is only for los, so drop physics groups that don't stop vision:
@@ -154,6 +155,7 @@ func trisFromGLB(path string) ([][9]float32, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			var idx []uint32
 			if prim.Indices != nil {
 				if idx, err = modeler.ReadIndices(doc, doc.Accessors[*prim.Indices], nil); err != nil {
@@ -165,6 +167,7 @@ func trisFromGLB(path string) ([][9]float32, error) {
 					idx[i] = uint32(i)
 				}
 			}
+
 			for i := 0; i+2 < len(idx); i += 3 {
 				a, b, c := pos[idx[i]], pos[idx[i+1]], pos[idx[i+2]]
 				tris = append(tris, [9]float32{a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]})
@@ -181,10 +184,12 @@ func trisFromOBJ(path string) ([][9]float32, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
+
 	var verts [][3]float32
 	var tris [][9]float32
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+
 	for sc.Scan() {
 		fields := strings.Fields(sc.Text())
 		if len(fields) == 0 {
@@ -212,6 +217,7 @@ func trisFromOBJ(path string) ([][9]float32, error) {
 				}
 				idx = append(idx, n)
 			}
+
 			for k := 1; k+1 < len(idx); k++ {
 				a, b, c := verts[idx[0]], verts[idx[k]], verts[idx[k+1]]
 				tris = append(tris, [9]float32{a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]})

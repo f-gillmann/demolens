@@ -2,8 +2,7 @@ package metrics
 
 import "github.com/f-gillmann/demolens/model"
 
-// rolls per-round numbers up into match totals. has to run first, KD/ADR/rating
-// all read off these.
+// Aggregates per-round stats into match totals; must run first (used by KD, ADR, rating).
 func aggregateRounds(m *model.Match) {
 	idx := playerIndex(m)
 	for _, r := range m.Rounds {
@@ -12,6 +11,7 @@ func aggregateRounds(m *model.Match) {
 			if p == nil {
 				continue
 			}
+
 			p.Kills += rp.Kills
 			p.Deaths += rp.Deaths
 			p.Assists += rp.Assists

@@ -25,11 +25,7 @@ func checkCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer func() {
-				if cerr := file.Close(); cerr != nil && err == nil {
-					err = cerr
-				}
-			}()
+			defer closeFile(file, &err)
 
 			info, err := demolens.Validate(file)
 			if err != nil {

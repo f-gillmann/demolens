@@ -1,0 +1,37 @@
+package model
+
+// Duel is one killer's record against one victim over the whole match.
+type Duel struct {
+	Killer       uint64         `json:"killer,string"`
+	Victim       uint64         `json:"victim,string"`
+	Kills        int            `json:"kills"`
+	Damage       int            `json:"damage"`                   // health damage killer dealt to victim
+	TimeToDamage float64        `json:"time_to_damage,omitempty"` // avg ms seeing to first damage, needs a map mesh
+	Weapons      map[string]int `json:"weapons,omitempty"`
+}
+
+// WeaponSpray holds a weapon's match spray accuracy: count of 3+ shot sprays
+// fired and the share of those bullets that landed.
+type WeaponSpray struct {
+	Sprays   int     `json:"sprays"`
+	Accuracy float64 `json:"accuracy"`
+}
+
+// SprayDeviation holds how a player's sprays with one weapon matched its recoil
+// pattern, averaged over every 3+ shot spray they fired.
+type SprayDeviation struct {
+	Sprays       int           `json:"sprays"`
+	AvgDeviation float64       `json:"avg_deviation"` // mean deg off from ideal recoil compensation
+	Bullets      []SprayBullet `json:"bullets"`       // one per shot index
+}
+
+// SprayBullet compares, at a given shot index, the ideal aim offset that cancels
+// the recoil pattern (should) against what the player actually did (player). Both
+// in degrees from the first shot. Good sprayers track should closely.
+type SprayBullet struct {
+	Index   int     `json:"index"`
+	ShouldX float64 `json:"should_x"`
+	ShouldY float64 `json:"should_y"`
+	PlayerX float64 `json:"player_x"`
+	PlayerY float64 `json:"player_y"`
+}

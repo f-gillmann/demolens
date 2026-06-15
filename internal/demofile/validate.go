@@ -16,9 +16,7 @@ type Info struct {
 	FileHash string
 }
 
-// Validate reads the header, makes sure it's a CS2 demo, and hashes the whole
-// stream. The hash is what we use to identify a demo, the header bytes are
-// folded in too.
+// Validate checks the demo magic bytes and returns the format info plus a SHA-256 of the stream.
 func Validate(r io.Reader) (Info, error) {
 	header := make([]byte, 8)
 	if _, err := io.ReadFull(r, header); err != nil {

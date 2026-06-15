@@ -16,6 +16,7 @@ func multiKillHistograms(rounds []model.Round) map[uint64][6]int {
 				perRound[kill.Killer]++
 			}
 		}
+
 		for id, amount := range perRound {
 			if amount > 5 {
 				amount = 5
@@ -37,11 +38,12 @@ type killTypes struct {
 func killTypeCounts(m *model.Match) map[uint64]killTypes {
 	counts := map[uint64]killTypes{}
 	for _, r := range m.Rounds {
-		group := map[uint64]map[int64]int{} // killer, then kill time, then count
+		killsByTime := map[uint64]map[int64]int{} // killer, then kill time, then count
 		for _, k := range r.Kills {
 			if k.Killer == 0 {
 				continue
 			}
+
 			c := counts[k.Killer]
 			if k.NoScope {
 				c.noScope++
@@ -50,18 +52,21 @@ func killTypeCounts(m *model.Match) map[uint64]killTypes {
 				c.wallbang++
 			}
 			counts[k.Killer] = c
-			if group[k.Killer] == nil {
-				group[k.Killer] = map[int64]int{}
+
+			if killsByTime[k.Killer] == nil {
+				killsByTime[k.Killer] = map[int64]int{}
 			}
-			group[k.Killer][k.TimeMicroseconds]++
+			killsByTime[k.Killer][k.TimeMicroseconds]++
 		}
-		for killer, times := range group {
+
+		for killer, times := range killsByTime {
 			collateral := 0
 			for _, n := range times {
 				if n >= 2 {
 					collateral += n
 				}
 			}
+
 			if collateral > 0 {
 				c := counts[killer]
 				c.collateral += collateral
@@ -79,13 +84,16 @@ func weaponStats(m *model.Match) map[uint64]map[string]model.WeaponStat {
 		if id == 0 || weapon == "" {
 			return
 		}
+
 		if stats[id] == nil {
 			stats[id] = map[string]model.WeaponStat{}
 		}
+
 		ws := stats[id][weapon]
 		fn(&ws)
 		stats[id][weapon] = ws
 	}
+
 	for _, r := range m.Rounds {
 		for _, k := range r.Kills {
 			edit(k.Killer, k.Weapon, func(ws *model.WeaponStat) {
@@ -95,6 +103,7 @@ func weaponStats(m *model.Match) map[uint64]map[string]model.WeaponStat {
 				}
 			})
 		}
+
 		for _, d := range r.Damages {
 			edit(d.Attacker, d.Weapon, func(ws *model.WeaponStat) {
 				ws.Damage += d.HealthDamage
@@ -121,6 +130,7 @@ func flashMatrix(m *model.Match) []model.FlashPair {
 				if f.SteamID == 0 {
 					continue
 				}
+
 				a := counts[pair{g.Thrower, f.SteamID}]
 				a.count++
 				a.blind += f.BlindMicroseconds
@@ -128,10 +138,12 @@ func flashMatrix(m *model.Match) []model.FlashPair {
 			}
 		}
 	}
+
 	pairs := make([]model.FlashPair, 0, len(counts))
 	for p, a := range counts {
 		pairs = append(pairs, model.FlashPair{Flasher: p.flasher, Flashed: p.flashed, Count: a.count, BlindMicroseconds: a.blind})
 	}
+
 	sort.Slice(pairs, func(i, j int) bool {
 		if pairs[i].Flasher != pairs[j].Flasher {
 			return pairs[i].Flasher < pairs[j].Flasher

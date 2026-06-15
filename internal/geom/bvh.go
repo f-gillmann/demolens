@@ -43,11 +43,13 @@ func (m *Mesh) buildBVH() {
 			t := m.order[i]
 			nmin, nmax = minVec(nmin, lo[t]), maxVec(nmax, hi[t])
 		}
+
 		idx := len(m.nodes)
 		m.nodes = append(m.nodes, bvhNode{min: nmin, max: nmax, left: -1, right: -1, start: start, end: end})
 		if end-start <= bvhLeafSize {
 			return idx
 		}
+
 		ext := nmax.Sub(nmin)
 		axis := 0
 		if ext.Y >= ext.X && ext.Y >= ext.Z {
@@ -55,6 +57,7 @@ func (m *Mesh) buildBVH() {
 		} else if ext.Z >= ext.X && ext.Z >= ext.Y {
 			axis = 2
 		}
+
 		sub := m.order[start:end]
 		sort.Slice(sub, func(a, b int) bool { return axisVal(cent[sub[a]], axis) < axisVal(cent[sub[b]], axis) })
 		mid := (start + end) / 2
@@ -63,6 +66,7 @@ func (m *Mesh) buildBVH() {
 		m.nodes[idx].left, m.nodes[idx].right = l, r
 		return idx
 	}
+
 	build(0, n)
 }
 
@@ -72,18 +76,21 @@ func (m *Mesh) Occluded(from, to r3.Vector) bool {
 	if len(m.nodes) == 0 {
 		return false
 	}
+
 	dir := to.Sub(from)
 	inv := r3.Vector{X: 1 / dir.X, Y: 1 / dir.Y, Z: 1 / dir.Z}
 	stack := [64]int{}
 	sp := 0
 	stack[sp] = 0
 	sp++
+
 	for sp > 0 {
 		sp--
 		nd := m.nodes[stack[sp]]
 		if !slabHit(from, inv, nd.min, nd.max) {
 			continue
 		}
+
 		if nd.left < 0 {
 			for i := nd.start; i < nd.end; i++ {
 				if m.tris[m.order[i]].blocks(from, dir) {
@@ -92,12 +99,14 @@ func (m *Mesh) Occluded(from, to r3.Vector) bool {
 			}
 			continue
 		}
+
 		if sp+2 <= len(stack) {
 			stack[sp] = nd.left
 			stack[sp+1] = nd.right
 			sp += 2
 		}
 	}
+
 	return false
 }
 

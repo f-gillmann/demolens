@@ -1,10 +1,19 @@
 package cli
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 )
 
 const version = "1.0.1"
+
+// closeFile closes f and reports the close error through err only if no earlier error was set.
+func closeFile(f *os.File, err *error) {
+	if cerr := f.Close(); cerr != nil && *err == nil {
+		*err = cerr
+	}
+}
 
 func NewRoot() *cobra.Command {
 	root := &cobra.Command{
