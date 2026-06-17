@@ -30,31 +30,10 @@ type UtilityAverages struct {
 	UnusedUtilityValue float64 `json:"unused_utility_value"` // unused util per death
 }
 
-// Grenade tracks one thrown grenade from release to detonation.
-type Grenade struct {
-	Thrower                  uint64   `json:"thrower,string"`
-	Side                     string   `json:"side"`                       // thrower's side, "CT"/"T"
-	Type                     string   `json:"type"`                       // flash / smoke / he / molotov / incendiary / decoy
-	ThrowTimeMicroseconds    int64    `json:"throw_time_microseconds"`    // since round start
-	DetonateTimeMicroseconds int64    `json:"detonate_time_microseconds"` // landing / pop
-	ExpireTimeMicroseconds   int64    `json:"expire_time_microseconds"`   // fade / burn-out. equals detonate for flash/he
-	FlightMicroseconds       int64    `json:"flight_microseconds"`        // throw to detonation
-	ThrowPosition            Position `json:"throw_position"`
-	DetonatePosition         Position `json:"detonate_position"`
-
-	// Flash outcomes, only for flashbangs
-	EnemiesFlashed   int             `json:"enemies_flashed,omitempty"`
-	TeammatesFlashed int             `json:"teammates_flashed,omitempty"`
-	Flashed          []FlashedPlayer `json:"flashed,omitempty"` // blind time per victim
-
-	// Trajectory. only filled when the grenade-paths option is set.
-	Path    []Position `json:"path,omitempty"`    // sampled in-flight positions
-	Bounces []Position `json:"bounces,omitempty"` // wall/floor bounce points
-}
-
 // FlashedPlayer is one player blinded by a flashbang, with how long.
 type FlashedPlayer struct {
-	SteamID           uint64 `json:"steam_id,string"`
-	Side              string `json:"side"` // victim's side
-	BlindMicroseconds int64  `json:"blind_microseconds"`
+	SteamID           uint64  `json:"steam_id,string"`
+	Side              string  `json:"side"` // victim's side
+	BlindMicroseconds int64   `json:"blind_microseconds"`
+	MaxAlpha          float64 `json:"max_alpha,omitempty"` // peak whiteout 0..255
 }

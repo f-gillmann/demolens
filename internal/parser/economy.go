@@ -2,24 +2,25 @@ package parser
 
 import (
 	"github.com/f-gillmann/demolens/model"
-	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
-	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 )
 
-// roundEconomy snapshots each side's buy as the round goes live.
-func roundEconomy(gs dem.GameState) model.RoundEconomy {
+// roundEconomy sums each side's buy-window-close equipment value from the
+// already-captured per-player RoundPlayer values (min(go-live+mp_buytime, death)).
+// Called at finalize, after onKill and onBuyWindowClose have locked every value.
+func roundEconomy(roster map[uint64]*model.RoundPlayer) model.RoundEconomy {
+	ct, t := 0, 0
+	for _, rp := range roster {
+		switch rp.Side {
+		case "CT":
+			ct += rp.EquipmentValue
+		case "T":
+			t += rp.EquipmentValue
+		}
+	}
 	return model.RoundEconomy{
-		CT: teamEconomy(gs.Participants().TeamMembers(common.TeamCounterTerrorists)),
-		T:  teamEconomy(gs.Participants().TeamMembers(common.TeamTerrorists)),
+		CT: model.TeamEconomy{EquipmentValue: ct, BuyType: buyType(ct)},
+		T:  model.TeamEconomy{EquipmentValue: t, BuyType: buyType(t)},
 	}
-}
-
-func teamEconomy(members []*common.Player) model.TeamEconomy {
-	value := 0
-	for _, p := range members {
-		value += p.EquipmentValueCurrent()
-	}
-	return model.TeamEconomy{EquipmentValue: value, BuyType: buyType(value)}
 }
 
 func buyType(value int) string {

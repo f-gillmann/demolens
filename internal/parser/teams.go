@@ -28,5 +28,21 @@ func captureTeams(gs dem.GameState, players map[uint64]*model.Player, sideToTeam
 		rec.Rank = pl.Rank()
 		rec.RankType = pl.RankType()
 		rec.CompetitiveWins = pl.CompetitiveWins()
+
+		// Premier-only rank predictions, read straight off the controller
+		// entity (same source as Rank()). Defensive int reads, 0/absent elsewhere
+		// so omitempty drops them on non-Premier demos. Last value seen wins.
+		if v, ok := propI(pl.Entity, "m_iCompetitiveRankingPredicted_Win"); ok {
+			rec.RankIfWin = v
+		}
+		if v, ok := propI(pl.Entity, "m_iCompetitiveRankingPredicted_Loss"); ok {
+			rec.RankIfLoss = v
+		}
+		if v, ok := propI(pl.Entity, "m_iCompetitiveRankingPredicted_Tie"); ok {
+			rec.RankIfTie = v
+		}
+		if cc := pl.CrosshairCode(); cc != "" {
+			rec.CrosshairCode = cc
+		}
 	}
 }

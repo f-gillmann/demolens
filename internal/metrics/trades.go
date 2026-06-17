@@ -1,6 +1,10 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import (
+	"sort"
+
+	"github.com/f-gillmann/demolens/model"
+)
 
 // squared distance (game units) under which a live teammate is close enough to
 // count as in position for a trade. squared so we skip the sqrt.
@@ -47,12 +51,20 @@ func newRoundIndex(round model.Round) roundIndex {
 
 // did a teammate kill the victim's killer inside the trade window? that's a trade.
 func (idx roundIndex) traded(victim uint64, team map[uint64]string) bool {
+	return idx.tradedBy(victim, team) != 0
+}
+
+// tradedBy returns the teammate who actually traded this death: the earliest
+// same-team kill of the victim's killer inside the trade window. 0 if untraded.
+func (idx roundIndex) tradedBy(victim uint64, team map[uint64]string) uint64 {
 	killer := idx.killerOf[victim]
 	if killer == 0 || team[victim] == "" {
-		return false
+		return 0
 	}
 
 	deathTime := idx.deathTime[victim]
+	var avenger uint64
+	var avengerTime int64
 	for _, kill := range idx.round.Kills {
 		if kill.Victim != killer {
 			continue
@@ -60,16 +72,30 @@ func (idx roundIndex) traded(victim uint64, team map[uint64]string) bool {
 		if kill.TimeMicroseconds < deathTime || kill.TimeMicroseconds-deathTime > tradeWindowMicros {
 			continue
 		}
-		if team[kill.Killer] == team[victim] {
-			return true
+		if team[kill.Killer] != team[victim] {
+			continue
+		}
+		if avenger == 0 || kill.TimeMicroseconds < avengerTime {
+			avenger = kill.Killer
+			avengerTime = kill.TimeMicroseconds
 		}
 	}
-	return false
+	return avenger
 }
 
 type tradeCounts struct {
 	killOpportunity, killAttempt, killSuccess    int // could-trade / tried / got it
 	deathOpportunity, deathAttempt, deathSuccess int // was-tradeable / tried for / got traded
+}
+
+// applyTo copies the trade tallies onto the player.
+func (tc *tradeCounts) applyTo(p *model.Player) {
+	p.TradeKillOpportunities = tc.killOpportunity
+	p.TradeKillAttempts = tc.killAttempt
+	p.TradeKills = tc.killSuccess
+	p.TradedDeathOpportunities = tc.deathOpportunity
+	p.TradedDeathAttempts = tc.deathAttempt
+	p.TradedDeaths = tc.deathSuccess
 }
 
 // the per-player trade funnel.
@@ -98,11 +124,8 @@ func tradeStats(m *model.Match) map[uint64]*tradeCounts {
 					continue // victim's living teammates only
 				}
 
-				near := distSq(mate.Position, death.KillerPosition) <= tradeProximitySq
-				killed := killedWithin(round, mate.SteamID, killer, deathTime, tradeWindowMicros)
-				damagedKiller := damagedWithin(round, mate.SteamID, killer, deathTime, tradeWindowMicros)
-
 				// opportunity: close enough, or already trading shots with the killer
+				near, killed, damagedKiller := tradeReach(round, death, mate)
 				if !near && !damagedKiller && !killed {
 					continue
 				}
@@ -135,6 +158,42 @@ func tradeStats(m *model.Match) map[uint64]*tradeCounts {
 		}
 	}
 	return stats
+}
+
+// possibleTraders lists the victim's living teammates who could have traded this
+// death: close enough, already damaging the killer, or who killed the killer.
+// Mirrors the tradeStats() opportunity gate for a single kill, sorted by steam_id.
+func possibleTraders(r model.Round, death model.RoundKill, team map[uint64]string) []uint64 {
+	victim, killer := death.Victim, death.Killer
+	if victim == 0 || killer == 0 || team[victim] == "" {
+		return nil
+	}
+
+	var out []uint64
+	for _, mate := range death.AlivePlayers {
+		if mate.SteamID == victim || team[mate.SteamID] != team[victim] {
+			continue // victim's living teammates only
+		}
+
+		near, killed, damagedKiller := tradeReach(r, death, mate)
+		if !near && !damagedKiller && !killed {
+			continue
+		}
+		out = append(out, mate.SteamID)
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+// tradeReach reports a living teammate's relation to a death, all inside the
+// trade window: near the kill spot, killed the killer, or already damaging the
+// killer. The trade-opportunity gate is "any of the three".
+func tradeReach(r model.Round, death model.RoundKill, mate model.AlivePlayer) (near, killed, damagedKiller bool) {
+	near = distSq(mate.Position, death.KillerPosition) <= tradeProximitySq
+	killed = killedWithin(r, mate.SteamID, death.Killer, death.TimeMicroseconds, tradeWindowMicros)
+	damagedKiller = damagedWithin(r, mate.SteamID, death.Killer, death.TimeMicroseconds, tradeWindowMicros)
+	return
 }
 
 func damagedWithin(r model.Round, attacker, victim uint64, after, window int64) bool {

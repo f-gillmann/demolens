@@ -3,6 +3,7 @@ package parser
 import (
 	"time"
 
+	"github.com/f-gillmann/demolens/internal/csdata"
 	"github.com/f-gillmann/demolens/model"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
@@ -10,10 +11,10 @@ import (
 
 // damageEvent turns a PlayerHurt into our damage record. into is time since the
 // round went live.
-func damageEvent(e events.PlayerHurt, into time.Duration) model.Damage {
+func damageEvent(e events.PlayerHurt, into time.Duration, healthDamage int) model.Damage {
 	d := model.Damage{
 		TimeMicroseconds: into.Microseconds(),
-		HealthDamage:     e.HealthDamageTaken,
+		HealthDamage:     healthDamage,
 		ArmorDamage:      e.ArmorDamageTaken,
 		HitGroup:         hitGroupString(e.HitGroup),
 	}
@@ -48,14 +49,13 @@ func damageType(w *common.Equipment) string {
 		return "world"
 	}
 
-	switch w.Class() {
-	case common.EqClassPistols, common.EqClassSMG, common.EqClassHeavy, common.EqClassRifle:
+	if csdata.IsGun(w) {
 		return "bullet"
-	case common.EqClassGrenade:
-		return "grenade_impact"
-	default:
-		return "other"
 	}
+	if w.Class() == common.EqClassGrenade {
+		return "grenade_impact"
+	}
+	return "other"
 }
 
 func hitGroupString(hg events.HitGroup) string {

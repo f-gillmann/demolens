@@ -35,6 +35,11 @@ func playerFrame(pl *common.Player, side string, into int64) model.PlayerFrame {
 		IsScoped:         pl.IsScoped(),
 		IsDucking:        pl.IsDucking(),
 		HasDefuseKit:     pl.HasDefuseKit(),
+		IsWalking:        pl.IsWalking(),
+		InBuyZone:        pl.IsInBuyZone(),
+		InBombZone:       pl.IsInBombZone(),
+		Stamina:          playerProp(pl, "m_pMovementServices.m_flStamina"),
+		DuckAmount:       playerProp(pl, "m_pMovementServices.m_flDuckAmount"),
 	}
 
 	if w := pl.ActiveWeapon(); w != nil {
@@ -42,6 +47,15 @@ func playerFrame(pl *common.Player, side string, into int64) model.PlayerFrame {
 	}
 
 	return frame
+}
+
+// playerProp reads a float movement prop off the player's pawn entity, 0 when the
+// prop or entity is absent (the field is omitempty, so 0 drops out).
+func playerProp(pl *common.Player, prop string) float64 {
+	if v, ok := propF64(pl.PlayerPawnEntity(), prop); ok {
+		return v
+	}
+	return 0
 }
 
 // aliveSnapshot grabs the position of everyone alive this tick. Feeds the

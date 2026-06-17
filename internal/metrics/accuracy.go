@@ -30,18 +30,15 @@ func accuracyStats(m *model.Match) {
 			// wallbangs/collaterals log a hit per victim but share a shot time.
 			// dedupe so it's still one shot.
 			t := d.TimeMicroseconds
-			if !a.seen[t] {
-				a.seen[t] = true
+			if firstSeen(a.seen, t) {
 				a.hits++
 			}
 
 			if d.Weapon != "AWP" {
-				if !a.seenNonAWP[t] {
-					a.seenNonAWP[t] = true
+				if firstSeen(a.seenNonAWP, t) {
 					a.nonAWPHits++
 				}
-				if d.HitGroup == "head" && !a.seenHead[t] {
-					a.seenHead[t] = true
+				if d.HitGroup == "head" && firstSeen(a.seenHead, t) {
 					a.nonAWPHeadHits++
 				}
 			}
@@ -61,4 +58,14 @@ func accuracyStats(m *model.Match) {
 			p.HeadAccuracy = float64(a.nonAWPHeadHits) / float64(a.nonAWPHits) * 100
 		}
 	}
+}
+
+// firstSeen marks a shot time and reports whether it was newly added, so hits
+// sharing a time (wallbang/collateral) count once.
+func firstSeen(m map[int64]bool, t int64) bool {
+	if m[t] {
+		return false
+	}
+	m[t] = true
+	return true
 }

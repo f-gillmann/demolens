@@ -90,10 +90,9 @@ func positionOf(p *common.Player) model.Position {
 	return toPosition(p.Position())
 }
 
-// roundRoster makes a fresh RoundPlayer for everyone playing, keyed by SteamID,
-// with side and freeze-time-end economy filled in. The parser accumulates the
-// round's stats onto these.
-func roundRoster(gs dem.GameState) map[uint64]*model.RoundPlayer {
+// roundRoster makes a fresh RoundPlayer per playing SteamID with side and freeze-end
+// economy. The freeze-end Loadout doubles as the round's inventory snapshot.
+func (st *parseState) roundRoster(gs dem.GameState) map[uint64]*model.RoundPlayer {
 	roster := map[uint64]*model.RoundPlayer{}
 	for _, pl := range gs.Participants().Playing() {
 		side := sideString(pl.Team)
@@ -103,25 +102,18 @@ func roundRoster(gs dem.GameState) map[uint64]*model.RoundPlayer {
 
 		spent := pl.MoneySpentThisRound()
 		roster[pl.SteamID64] = &model.RoundPlayer{
-			SteamID:        pl.SteamID64,
-			Side:           side,
-			MoneySpent:     spent,
-			StartMoney:     pl.Money() + spent,
-			EquipmentValue: pl.EquipmentValueFreezeTimeEnd(),
-			Loadout:        loadout(pl),
+			SteamID:    pl.SteamID64,
+			Side:       side,
+			MoneySpent: spent,
+			StartMoney: pl.Money() + spent,
+			// freeze-end value is the SEED/floor. onKill (death) and onBuyWindowClose
+			// (connected survivors) overwrite it with the buy-window value. A player
+			// disconnected through the buy window keeps this seed, never 0.
+			EquipmentValue:   pl.EquipmentValueFreezeTimeEnd(),
+			Loadout:          st.buildLoadout(pl),
+			IsConnected:      pl.IsConnected,
+			IsControllingBot: pl.IsControllingBot(),
 		}
 	}
 	return roster
-}
-
-// loadout is the weapons and util a player walks into the round with.
-func loadout(pl *common.Player) []string {
-	var items []string
-	for _, w := range pl.Weapons() {
-		items = append(items, w.String())
-	}
-	if pl.HasDefuseKit() {
-		items = append(items, "Defuse Kit")
-	}
-	return items
 }

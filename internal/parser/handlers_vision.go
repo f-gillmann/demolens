@@ -8,22 +8,56 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
-// onPlayerFrames samples player pos + state each frame (opt-in), throttled so
-// output stays bounded.
+// below this many candidate sightlines the goroutine dispatch costs more than the
+// parallel los work saves, so run them inline
+const losParallelThreshold = 16
+
+// onPlayerFrames samples player pos + state each frame into the round's positions
+// stream (opt-in), throttled so output stays bounded.
 func (st *parseState) onPlayerFrames(events.FrameDone) {
 	if !st.opts.PlayerFrames || !st.roundLive || st.pending == nil {
 		return
 	}
 	cur := st.parsed.CurrentTime()
-	if cur-st.lastFrameSample < frameSamplePeriod {
+	if cur-st.frames.lastFrameSample < frameSamplePeriod {
 		return
 	}
-	st.lastFrameSample = cur
+	st.frames.lastFrameSample = cur
+	streams := st.ensureStreams()
+	if streams == nil {
+		return
+	}
 	into := (cur - st.roundStart).Microseconds()
 	for _, pl := range st.parsed.GameState().Participants().Playing() {
 		if side := sideString(pl.Team); side != "" {
-			st.pending.PlayerFrames = append(st.pending.PlayerFrames, playerFrame(pl, side, into))
+			streams.Positions = append(streams.Positions, playerFrame(pl, side, into))
 		}
+	}
+}
+
+// onBuyWindowClose locks each survivor's equipment value at the buy deadline, once
+// per round. Dead players were capped in onKill; disconnects keep their freeze seed.
+func (st *parseState) onBuyWindowClose(events.FrameDone) {
+	if !st.roundLive || st.pendingPlayers == nil || st.econ.buyWindowClosed {
+		return
+	}
+	if st.parsed.CurrentTime() < st.econ.buyDeadline {
+		return
+	}
+	st.econ.buyWindowClosed = true
+
+	for _, pl := range st.parsed.GameState().Participants().Playing() {
+		if sideString(pl.Team) == "" || st.econ.buyCaptured[pl.SteamID64] {
+			continue
+		}
+		rp := st.pendingPlayers[pl.SteamID64]
+		if rp == nil {
+			continue
+		}
+		if v := pl.EquipmentValueCurrent(); v > 0 { // never clobber the seed with 0
+			rp.EquipmentValue = v
+		}
+		st.econ.buyCaptured[pl.SteamID64] = true
 	}
 }
 
@@ -33,13 +67,13 @@ func (st *parseState) onSpeedSample(events.FrameDone) {
 	cur := st.parsed.CurrentTime()
 	for _, pl := range st.parsed.GameState().Participants().Playing() {
 		pos := toPosition(pl.Position())
-		if prev, ok := st.lastPos[pl.SteamID64]; ok {
-			if dt := (cur - st.lastPosTime[pl.SteamID64]).Seconds(); dt > 0 {
-				st.playerSpeed[pl.SteamID64] = horizontalSpeed(pos, prev, dt)
+		if prev, ok := st.frames.lastPos[pl.SteamID64]; ok {
+			if dt := (cur - st.frames.lastPosTime[pl.SteamID64]).Seconds(); dt > 0 {
+				st.frames.playerSpeed[pl.SteamID64] = horizontalSpeed(pos, prev, dt)
 			}
 		}
-		st.lastPos[pl.SteamID64] = pos
-		st.lastPosTime[pl.SteamID64] = cur
+		st.frames.lastPos[pl.SteamID64] = pos
+		st.frames.lastPosTime[pl.SteamID64] = cur
 	}
 }
 
@@ -64,36 +98,35 @@ func (st *parseState) onSighting(events.FrameDone) {
 
 	// pass 1 (sequential): pull each alive player's eye pos + view dir once up
 	// front, so the pair loop is O(n) reads instead of O(n^2). reuse the buffer.
-	st.live = st.live[:0]
+	st.vision.live = st.vision.live[:0]
 	for _, pl := range st.parsed.GameState().Participants().Playing() {
 		if !pl.IsAlive() {
 			continue
 		}
 		if eye, ok := pl.PositionEyes(); ok {
-			st.live = append(st.live, pv{pl.SteamID64, pl.Team, eye, viewVector(pl)})
+			st.vision.live = append(st.vision.live, pv{pl.SteamID64, pl.Team, eye, viewVector(pl)})
 		}
 	}
 
-	st.cands = st.cands[:0]
-	for i := range st.live {
-		s := st.live[i]
-		for j := range st.live {
-			e := st.live[j]
+	st.vision.cands = st.vision.cands[:0]
+	for i := range st.vision.live {
+		s := st.vision.live[i]
+		for j := range st.vision.live {
+			e := st.vision.live[j]
 			if e.team == s.team {
 				continue
 			}
 			dir := e.eye.Sub(s.eye)
 			key := [2]uint64{s.id, e.id}
-			eng := st.engagements[key]
+			eng := st.vision.engagements[key]
 			if eng == nil {
 				eng = &engagement{}
-				st.engagements[key] = eng
+				st.vision.engagements[key] = eng
 			}
 
-			// crosshair placement: snapshot the view the moment the enemy hits the
-			// appearance frustum. the move from there to the hit is the placement.
-			// frustum only, no los gate: appearance fires earlier than a strict wall
-			// raycast, and gating on los here undershoots.
+			// crosshair placement: snapshot the view when the enemy hits the
+			// appearance frustum; move from there to the hit is the placement. No los
+			// gate here, it fires earlier than a wall raycast and undershoots.
 			xIn := enemyInFrustum(s.view, dir, st.cal.CrosshairConeDeg)
 			if xIn && !eng.crosshairInFrustum && !eng.crosshairPending {
 				eng.crosshairPending, eng.appearView = true, s.view
@@ -102,66 +135,68 @@ func (st *parseState) onSighting(events.FrameDone) {
 			}
 			eng.crosshairInFrustum = xIn
 
-			// TTD clock starts when the enemy is first seen: inside the frustum,
-			// clear los, not through smoke. it must stay visible for TTDDebounceMs
-			// before the clock commits, which kills 1-tick grazes. then it's back-dated
-			// to first-visible. brief look-aways don't break it. once the enemy is
-			// unseen for TTDGapMs the sighting resets, so re-peeking someone you just
-			// saw isn't counted as a fresh duel.
-			// the cheap frustum/mesh gate stays here; the expensive los+smoke check
-			// is deferred to pass 2 so it can run concurrently.
-			ttdCand := enemyInFrustum(s.view, dir, st.cal.TTDFovDeg) && st.mesh != nil
+			// TTD clock: starts on first sight, commits after TTDDebounceMs continuous
+			// visibility (kills 1-tick grazes, back-dated to first-visible), resets
+			// after TTDGapMs unseen. Cheap frustum/mesh gate; los+smoke is pass 2.
+			ttdCand := enemyInFrustum(s.view, dir, st.cal.TTDFovDeg) && st.vision.mesh != nil
 			if ttdCand {
-				st.cands = append(st.cands, cand{en: eng, sEye: s.eye, eEye: e.eye})
+				st.vision.cands = append(st.vision.cands, cand{en: eng, sEye: s.eye, eEye: e.eye})
 			} else {
 				st.notVisible(eng, now)
 			}
 		}
 	}
 
-	// pass 2 (parallel): the los raycast + smoke test for each cand. mesh and
-	// activeSmokes are read-only for the whole handler, so concurrent reads are
-	// safe; each goroutine only writes its own disjoint cand.vis indices.
-	if len(st.cands) >= 16 {
+	st.runLOSPass()
+	st.runTTDStateMachine(now)
+}
+
+// runLOSPass is pass 2: los raycast + smoke test per cand. mesh/activeSmokes are
+// read-only and each goroutine writes disjoint cand.vis, so chunking is safe above
+// losParallelThreshold, else inline.
+func (st *parseState) runLOSPass() {
+	if len(st.vision.cands) >= losParallelThreshold {
 		workers := runtime.GOMAXPROCS(0)
-		if workers > len(st.cands) {
-			workers = len(st.cands)
+		if workers > len(st.vision.cands) {
+			workers = len(st.vision.cands)
 		}
-		chunk := (len(st.cands) + workers - 1) / workers
+		chunk := (len(st.vision.cands) + workers - 1) / workers
 		var wg sync.WaitGroup
 		for w := 0; w < workers; w++ {
 			lo := w * chunk
-			if lo >= len(st.cands) {
+			if lo >= len(st.vision.cands) {
 				break
 			}
 			hi := lo + chunk
-			if hi > len(st.cands) {
-				hi = len(st.cands)
+			if hi > len(st.vision.cands) {
+				hi = len(st.vision.cands)
 			}
 			wg.Add(1)
 			go func(lo, hi int) {
 				defer wg.Done()
 				for k := lo; k < hi; k++ {
-					c := &st.cands[k]
-					c.vis = losClear(st.mesh, c.sEye, c.eEye) &&
-						!smokeBlocked(c.sEye, c.eEye, st.activeSmokes)
+					c := &st.vision.cands[k]
+					c.vis = losClear(st.vision.mesh, c.sEye, c.eEye) &&
+						!smokeBlocked(c.sEye, c.eEye, st.vision.activeSmokes)
 				}
 			}(lo, hi)
 		}
 		wg.Wait()
 	} else {
-		for k := range st.cands {
-			c := &st.cands[k]
-			c.vis = losClear(st.mesh, c.sEye, c.eEye) &&
-				!smokeBlocked(c.sEye, c.eEye, st.activeSmokes)
+		for k := range st.vision.cands {
+			c := &st.vision.cands[k]
+			c.vis = losClear(st.vision.mesh, c.sEye, c.eEye) &&
+				!smokeBlocked(c.sEye, c.eEye, st.vision.activeSmokes)
 		}
 	}
+}
 
-	// pass 3 (sequential): the TTD state machine over each cand. each en is
-	// touched once for TTD this frame (a pair is a cand or a non-cand, never
-	// both), so pair order doesn't change the final state.
-	for k := range st.cands {
-		c := &st.cands[k]
+// runTTDStateMachine is pass 3 (sequential): the TTD state machine over each cand.
+// each en is touched once for TTD this frame (a pair is a cand or a non-cand,
+// never both), so pair order doesn't change the final state.
+func (st *parseState) runTTDStateMachine(now time.Duration) {
+	for k := range st.vision.cands {
+		c := &st.vision.cands[k]
 		eng := c.en
 		if c.vis {
 			if eng.visSince == 0 {

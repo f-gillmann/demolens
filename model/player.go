@@ -46,21 +46,34 @@ type Player struct {
 	Rating1                  float64 `json:"hltv_rating_1"`
 	Rating2                  float64 `json:"hltv_rating_2"` // 2.0, approximate
 
-	NoScopeKills    int        `json:"no_scope_kills"`
-	WallbangKills   int        `json:"wallbang_kills"`
-	CollateralKills int        `json:"collateral_kills"` // 2+ enemies on one bullet
-	MultiKills      MultiKills `json:"multi_kills"`
+	NoScopeKills    int `json:"no_scope_kills"`
+	WallbangKills   int `json:"wallbang_kills"`
+	CollateralKills int `json:"collateral_kills"` // 2+ enemies on one bullet
+	// kill-type counters. chicken_kills is player-total only (no chicken victim per round).
+	KnifeKills    int        `json:"knife_kills,omitempty"`
+	ZeusKills     int        `json:"zeus_kills,omitempty"`
+	ChickenKills  int        `json:"chicken_kills,omitempty"`
+	AirborneKills int        `json:"airborne_kills,omitempty"`  // killer_airborne
+	BlindKills    int        `json:"blind_kills,omitempty"`     // killer was blind (attacker_blind)
+	ScopedKills   int        `json:"scoped_kills,omitempty"`    // killer was scoped
+	PickedUpKills int        `json:"picked_up_kills,omitempty"` // kills made with a picked-up gun
+	MultiKills    MultiKills `json:"multi_kills"`
 
 	// Valve comp/premier rank. only set for Valve MM demos, 0 otherwise.
 	Rank            int `json:"rank"`
 	RankType        int `json:"rank_type"`
 	CompetitiveWins int `json:"competitive_wins"`
+	// rank predictions. Valve-MM/Premier only; 0/absent otherwise.
+	RankIfWin     int    `json:"rank_if_win,omitempty"`
+	RankIfLoss    int    `json:"rank_if_loss,omitempty"`
+	RankIfTie     int    `json:"rank_if_tie,omitempty"`
+	CrosshairCode string `json:"crosshair_code,omitempty"` // shareable crosshair profile string
 
 	WeaponStats map[string]WeaponStat `json:"weapon_stats"`
 
 	SprayWeapons map[string]WeaponSpray `json:"spray_weapons,omitempty"` // spray accuracy per weapon
 
-	SprayPatterns map[string]SprayDeviation `json:"spray_patterns,omitempty"` // recoil-pattern deviation per weapon
+	SprayPatterns []SprayDeviation `json:"spray_patterns,omitempty"` // recoil-pattern deviation, one per weapon variant
 
 	CounterStrafe *CounterStrafe `json:"counter_strafe,omitempty"` // needs a map mesh
 

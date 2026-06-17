@@ -1,9 +1,7 @@
 package parser
 
-// Calibration holds the tunable thresholds behind the estimated aim stats:
-// spotted accuracy, counter-strafe, spray, time-to-damage, crosshair. The defaults
-// are sensible values; override them via Options.Calibration from the library or
-// the analyze CLI flags. Any zero field falls back to its default.
+// Calibration holds the tunable thresholds behind the estimated aim stats. Override
+// the tuned defaults via Options.Calibration; any zero field falls back to default.
 type Calibration struct {
 	CrosshairConeDeg float64 // appearance cone the enemy has to reach
 	TTDFovDeg        float64 // TTD: horizontal half-fov for "first saw enemy", the clock start

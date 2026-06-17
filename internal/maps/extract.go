@@ -121,10 +121,9 @@ func runVRF(vrf, vpk, workdir string) (string, error) {
 	return best, nil
 }
 
-// trisFromGLB reads a glTF/GLB into triangles, kept in the demo's coordinate
-// space. VRF stores physics verts in game units (Source Z-up), so we take the
-// raw accessor positions and deliberately skip node transforms. applying them
-// would rescale to glTF meters/Y-up and break every distance check downstream.
+// trisFromGLB reads a glTF/GLB into triangles in the demo's coordinate space (Source
+// Z-up game units). Skips node transforms; applying them rescales to glTF meters/Y-up
+// and breaks downstream distance checks.
 func trisFromGLB(path string) ([][9]float32, error) {
 	doc, err := gltf.Open(path)
 	if err != nil {
@@ -133,14 +132,9 @@ func trisFromGLB(path string) ([][9]float32, error) {
 
 	var tris [][9]float32
 	for _, m := range doc.Meshes {
-		// this mesh is only for los, so drop physics groups that don't stop vision:
-		//   clip brushes (player/npc/grenade/ladder): invisible volumes, the
-		//     playerclip is basically a map-sized box that would block every sightline.
-		//   physics_sky: the skybox shell (de_cache etc).
-		//   chainlink: wire fences you see right through (overpass).
-		// glass stays. CS2 windows start solid and we don't track when they break,
-		// so opaque is the safe default. solid physics_group_* and passbullets_*
-		// walls stay too.
+		// los mesh: drop groups that don't stop vision (clip volumes, skybox shell,
+		// see-through chainlink). glass stays: CS2 windows start solid and we don't
+		// track breaks, so opaque is the safe default.
 		if name := strings.ToLower(m.Name); strings.Contains(name, "clip") ||
 			strings.Contains(name, "chainlink") || strings.Contains(name, "sky") {
 			continue
@@ -198,9 +192,12 @@ func trisFromOBJ(path string) ([][9]float32, error) {
 		switch fields[0] {
 		case "v":
 			if len(fields) >= 4 {
-				x, _ := strconv.ParseFloat(fields[1], 32)
-				y, _ := strconv.ParseFloat(fields[2], 32)
-				z, _ := strconv.ParseFloat(fields[3], 32)
+				x, ex := strconv.ParseFloat(fields[1], 32)
+				y, ey := strconv.ParseFloat(fields[2], 32)
+				z, ez := strconv.ParseFloat(fields[3], 32)
+				if ex != nil || ey != nil || ez != nil {
+					return nil, fmt.Errorf("%s: bad vertex %q", path, sc.Text())
+				}
 				verts = append(verts, [3]float32{float32(x), float32(y), float32(z)})
 			}
 		case "f":

@@ -22,6 +22,12 @@ func aggregateRounds(m *model.Match) {
 			p.ShotsFired += rp.ShotsFired
 			p.ExitKills += rp.ExitKills
 			p.ExitDeaths += rp.ExitDeaths
+			p.KnifeKills += rp.KnifeKills
+			p.ZeusKills += rp.ZeusKills
+			p.AirborneKills += rp.AirborneKills
+			p.BlindKills += rp.BlindKills
+			p.ScopedKills += rp.ScopedKills
+			p.PickedUpKills += rp.PickedUpKills
 			addUtility(&p.Utility, rp.Utility)
 		}
 	}

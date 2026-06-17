@@ -21,6 +21,8 @@ func analyzeCmd() *cobra.Command {
 		Short: "analyze a demo and print JSON",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			resolveStreams(cmd, &opts)
+
 			file, err := os.Open(args[0])
 			if err != nil {
 				return err
@@ -60,9 +62,12 @@ func analyzeCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&out, "out", "o", "", "write JSON to a file path, or a directory to name it <file_hash>.json (default: stdout)")
-	cmd.Flags().BoolVarP(&opts.PlayerFrames, "positions", "p", false, "include per-frame player positions + state (large output)")
-	cmd.Flags().BoolVarP(&opts.Shots, "shots", "s", false, "include per-shot shooter geometry (large output)")
-	cmd.Flags().BoolVarP(&opts.GrenadePaths, "grenade-paths", "g", false, "include grenade trajectories + bounces (large output)")
+	cmd.Flags().StringVar(&opts.Tier, "tier", "full", "stream preset: core (no streams), detail (positions/shots/grenade-paths), full (all streams)")
+	cmd.Flags().BoolVarP(&opts.PlayerFrames, "positions", "p", false, "override the 'positions' stream (per-frame player positions + state, large output)")
+	cmd.Flags().BoolVarP(&opts.Shots, "shots", "s", false, "override the 'shots' stream (per-shot shooter geometry, large output)")
+	cmd.Flags().BoolVarP(&opts.GrenadePaths, "grenade-paths", "g", false, "override the 'grenade_paths' stream (grenade trajectories + bounces, large output)")
+	cmd.Flags().BoolVar(&opts.Inventory, "inventory", false, "override the 'inventory' stream (mid-round inventory change log)")
+	cmd.Flags().BoolVar(&opts.DroppedWeapons, "dropped-weapons", false, "override the 'dropped_weapons' stream (world weapons at phase boundaries)")
 	calibration := &opts.Calibration
 	cmd.Flags().StringVar(&opts.MapsDir, "maps-dir", "tris", "dir of .tri map meshes for time-to-damage line of sight")
 	cmd.Flags().Float64Var(&calibration.CrosshairConeDeg, "crosshair-cone", calibration.CrosshairConeDeg, "crosshair appearance cone (deg)")
@@ -79,4 +84,38 @@ func analyzeCmd() *cobra.Command {
 	cmd.Flags().Float64Var(&calibration.SprayHitWindowMs, "spray-hit-window", calibration.SprayHitWindowMs, "spray shot-to-impact match window (ms)")
 	cmd.Flags().Float64Var(&calibration.FlashBlindScale, "flash-scale", calibration.FlashBlindScale, "scale flash duration to effective blind time")
 	return cmd
+}
+
+// resolveStreams folds the --tier preset and per-stream override flags into the
+// final stream booleans: the tier sets the baseline, then any flag the user
+// explicitly passed overrides its stream on top.
+func resolveStreams(cmd *cobra.Command, opts *demolens.Options) {
+	type override struct {
+		name string
+		flag *bool
+	}
+	overrides := []override{
+		{"positions", &opts.PlayerFrames},
+		{"shots", &opts.Shots},
+		{"grenade-paths", &opts.GrenadePaths},
+		{"inventory", &opts.Inventory},
+		{"dropped-weapons", &opts.DroppedWeapons},
+	}
+
+	// snapshot the explicit values before ResolveTier stomps every bool.
+	explicit := make(map[string]bool, len(overrides))
+	for _, o := range overrides {
+		explicit[o.name] = *o.flag
+	}
+
+	opts.ResolveTier()
+
+	for _, o := range overrides {
+		if cmd.Flags().Changed(o.name) {
+			*o.flag = explicit[o.name]
+		}
+	}
+
+	// a non-preset Tier makes the parser keep these booleans instead of re-applying a preset.
+	opts.Tier = "custom"
 }

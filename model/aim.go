@@ -20,6 +20,9 @@ type WeaponSpray struct {
 // SprayDeviation holds how a player's sprays with one weapon matched its recoil
 // pattern, averaged over every 3+ shot spray they fired.
 type SprayDeviation struct {
+	Weapon       string        `json:"weapon"`      // display weapon name, e.g. "AUG"
+	Scoped       bool          `json:"scoped"`      // fired while scoped in (AUG/SG553 have a scoped pattern)
+	SilencerOn   bool          `json:"silencer_on"` // silencer attached (M4A1-S has a no-silencer pattern)
 	Sprays       int           `json:"sprays"`
 	AvgDeviation float64       `json:"avg_deviation"` // mean deg off from ideal recoil compensation
 	Bullets      []SprayBullet `json:"bullets"`       // one per shot index

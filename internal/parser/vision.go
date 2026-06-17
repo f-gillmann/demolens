@@ -10,16 +10,18 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 )
 
-// losClear: can eyeFrom see any part of an enemy at eyeTo through the map mesh.
-// We sample the silhouette at head/chest/feet, both dead centre and at the
-// left/right edges perpendicular to the sightline. So a shoulder or gun poking
-// round a corner still counts.
+// losClear: can eyeFrom see any part of an enemy at eyeTo through the map mesh. We
+// sample the silhouette at head/chest/feet, both dead centre and at the left/right
+// edges perpendicular to the sightline, so a shoulder or gun round a corner counts.
 var losDZ = [3]float64{0, -20, -55}
+
+// half a player's width in game units, used to offset the silhouette edge samples
+const playerHalfWidth = 16.0
 
 func losClear(mesh *geom.Mesh, eyeFrom, eyeTo r3.Vector) bool {
 	perp := eyeTo.Sub(eyeFrom).Cross(r3.Vector{X: 0, Y: 0, Z: 1})
 	if perp.Norm() > 1e-6 {
-		perp = perp.Normalize().Mul(16) // approx half a player width
+		perp = perp.Normalize().Mul(playerHalfWidth)
 	}
 	lats := [3]r3.Vector{{}, perp, perp.Mul(-1)}
 

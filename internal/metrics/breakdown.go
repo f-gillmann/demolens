@@ -33,6 +33,18 @@ type killTypes struct {
 	noScope, wallbang, collateral int
 }
 
+// applyTo copies the kill-type tallies onto the player.
+func (kt killTypes) applyTo(p *model.Player) {
+	p.NoScopeKills = kt.noScope
+	p.WallbangKills = kt.wallbang
+	p.CollateralKills = kt.collateral
+}
+
+// toMultiKills turns a 0..5 kills-per-round histogram into the model breakdown.
+func toMultiKills(h [6]int) model.MultiKills {
+	return model.MultiKills{K1: h[1], K2: h[2], K3: h[3], K4: h[4], K5: h[5]}
+}
+
 // noscope/wallbang/collateral counts per player. collateral = 2+ victims dropped
 // by the same shot (same timestamp).
 func killTypeCounts(m *model.Match) map[uint64]killTypes {
@@ -122,7 +134,7 @@ func flashMatrix(m *model.Match) []model.FlashPair {
 	}
 	counts := map[pair]agg{}
 	for _, r := range m.Rounds {
-		for _, g := range r.Grenades {
+		for _, g := range r.Grenades.Flashes {
 			if g.Thrower == 0 {
 				continue
 			}

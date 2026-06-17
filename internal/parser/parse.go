@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"sort"
 	"time"
 
 	"github.com/f-gillmann/demolens/model"
@@ -12,13 +13,86 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
-// Options turns on the expensive per-frame captures. Zero value is the cheap path.
+// Options turns on the expensive per-frame captures. Zero value is the cheap path
+// (no heavy streams, tier "core"). A non-empty Tier preset flips the stream
+// booleans on resolve; individual booleans set explicitly are not overridden.
 type Options struct {
-	PlayerFrames bool        // sample player pos + state each frame
-	Shots        bool        // per-shot shooter geometry
-	GrenadePaths bool        // grenade trajectories + bounces
-	MapsDir      string      // .tri mesh dir for TTD los. empty disables TTD
-	Calibration  Calibration // aim-stat thresholds, zero fields fall back to defaults
+	PlayerFrames   bool        // "positions" stream: sample player pos + state each frame
+	Shots          bool        // "shots" stream: per-shot shooter geometry
+	GrenadePaths   bool        // "grenade_paths" stream: grenade trajectories + bounces
+	Inventory      bool        // "inventory" stream: mid-round inventory change log
+	DroppedWeapons bool        // "dropped_weapons" stream: world weapons at phase boundaries
+	Tier           string      // optional preset: core / detail / full. empty means full.
+	MapsDir        string      // .tri mesh dir for TTD los. empty disables TTD
+	Calibration    Calibration // aim-stat thresholds, zero fields fall back to defaults
+}
+
+// stream names exactly as they appear in meta.output.streams, sorted.
+const (
+	streamPositions      = "positions"
+	streamShots          = "shots"
+	streamGrenadePaths   = "grenade_paths"
+	streamInventory      = "inventory"
+	streamDroppedWeapons = "dropped_weapons"
+)
+
+// positionsSampleHz is the positions-stream sample rate, derived from the frame
+// sample period so it stays in lockstep with frameSamplePeriod.
+const positionsSampleHz = float64(time.Second) / float64(frameSamplePeriod)
+
+// ResolveTier applies a Tier preset to the stream booleans: core off, detail on for
+// light streams, full/empty on for all. Unknown tiers leave caller-set booleans.
+func (o *Options) ResolveTier() {
+	switch o.Tier {
+	case "core":
+		o.PlayerFrames, o.Shots, o.GrenadePaths, o.Inventory, o.DroppedWeapons = false, false, false, false, false
+	case "detail":
+		o.PlayerFrames, o.Shots, o.GrenadePaths = true, true, true
+		o.Inventory, o.DroppedWeapons = false, false
+	case "full", "":
+		o.PlayerFrames, o.Shots, o.GrenadePaths, o.Inventory, o.DroppedWeapons = true, true, true, true, true
+	}
+}
+
+// tierName reports the tier these stream booleans correspond to: full when all
+// five are on, core when none are, detail otherwise. Mirrors ResolveTier.
+func (o Options) tierName() string {
+	on := 0
+	for _, b := range []bool{o.PlayerFrames, o.Shots, o.GrenadePaths, o.Inventory, o.DroppedWeapons} {
+		if b {
+			on++
+		}
+	}
+	switch on {
+	case 5:
+		return "full"
+	case 0:
+		return "core"
+	default:
+		return "detail"
+	}
+}
+
+// enabledStreamNames is the sorted list of on streams for meta.output.streams.
+func (o Options) enabledStreamNames() []string {
+	var names []string
+	if o.PlayerFrames {
+		names = append(names, streamPositions)
+	}
+	if o.Shots {
+		names = append(names, streamShots)
+	}
+	if o.GrenadePaths {
+		names = append(names, streamGrenadePaths)
+	}
+	if o.Inventory {
+		names = append(names, streamInventory)
+	}
+	if o.DroppedWeapons {
+		names = append(names, streamDroppedWeapons)
+	}
+	sort.Strings(names)
+	return names
 }
 
 const frameSamplePeriod = 250 * time.Millisecond
@@ -38,7 +112,8 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 		}
 	}()
 
-	match := &model.Match{}
+	opts.ResolveTier() // turn the tier preset into the stream booleans before we wire handlers
+	match := &model.Match{SchemaVersion: 4}
 	st := newParseState(parsed, opts, match)
 
 	parsed.RegisterNetMessageHandler(st.onServerInfo)
@@ -48,8 +123,10 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 	parsed.RegisterEventHandler(st.onFreezetimeEnd)
 	parsed.RegisterEventHandler(st.onRoundStart)
 	parsed.RegisterEventHandler(st.onKill)
+	parsed.RegisterEventHandler(st.onOtherDeath)
 	parsed.RegisterEventHandler(st.onPlayerHurt)
 	parsed.RegisterEventHandler(st.onWeaponFire)
+	parsed.RegisterEventHandler(st.onItemPickup)
 	parsed.RegisterEventHandler(st.onGrenadeThrow)
 
 	parsed.RegisterEventHandler(func(e events.FlashExplode) { st.detonate(e.GrenadeEntityID, st.grenadeEventPos(e.GrenadeEvent), true) })
@@ -76,8 +153,14 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 	parsed.RegisterEventHandler(st.onGrenadeBounce)
 
 	parsed.RegisterEventHandler(st.onPlayerFrames)
+	parsed.RegisterEventHandler(st.onBuyWindowClose)
 	parsed.RegisterEventHandler(st.onSpeedSample)
 	parsed.RegisterEventHandler(st.onSighting)
+
+	parsed.RegisterEventHandler(st.onDisconnect)
+	parsed.RegisterEventHandler(st.onConnect)
+	parsed.RegisterEventHandler(st.onBotConnect)
+	parsed.RegisterEventHandler(st.onBotTakenOver)
 
 	parsed.RegisterEventHandler(st.onRoundEnd)
 

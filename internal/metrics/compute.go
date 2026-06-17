@@ -14,41 +14,34 @@ func Compute(m *model.Match) {
 	killTypes := killTypeCounts(m)
 
 	computeOpenings(m)
+	enrichKills(m)
 	computeClutches(m)
 	accuracyStats(m)
 
-	m.FlashMatrix = flashMatrix(m)
+	m.FlashMatrixTotal = flashMatrix(m)
 
 	for i := range m.Players {
 		p := &m.Players[i]
 
 		p.KD = killDeathRatio(*p)
 		p.KAST = kast[p.SteamID]
-		p.ADR = averageDamagePerRound(*p, rounds)
-		p.KPR = averageKillsPerRound(*p, rounds)
-		p.DPR = averageDeathsPerRound(*p, rounds)
-		p.APR = averageAssistsPerRound(*p, rounds)
+		p.ADR = perRound(float64(p.Damage), rounds)
+		p.KPR = perRound(float64(p.Kills), rounds)
+		p.DPR = perRound(float64(p.Deaths), rounds)
+		p.APR = perRound(float64(p.Assists), rounds)
 		p.HSPercent = headshotPercent(*p)
 
-		if tradeKill := trades[p.SteamID]; tradeKill != nil {
-			p.TradeKillOpportunities = tradeKill.killOpportunity
-			p.TradeKillAttempts = tradeKill.killAttempt
-			p.TradeKills = tradeKill.killSuccess
-			p.TradedDeathOpportunities = tradeKill.deathOpportunity
-			p.TradedDeathAttempts = tradeKill.deathAttempt
-			p.TradedDeaths = tradeKill.deathSuccess
+		if tc := trades[p.SteamID]; tc != nil {
+			tc.applyTo(p)
 		}
 
-		p.Rating1 = ratingHLTV1(*p, rounds, multiKills[p.SteamID])
-		p.Rating2 = ratingHLTV2(p.KAST, p.KPR, p.DPR, p.ADR, p.APR)
-
 		h := multiKills[p.SteamID]
-		p.MultiKills = model.MultiKills{K1: h[1], K2: h[2], K3: h[3], K4: h[4], K5: h[5]}
+		p.Rating1 = ratingHLTV1(*p, rounds, h)
+		p.Rating2 = ratingHLTV2(p.KAST, p.KPR, p.DPR, p.ADR, p.APR)
+		p.MultiKills = toMultiKills(h)
 
 		if kt, ok := killTypes[p.SteamID]; ok {
-			p.NoScopeKills = kt.noScope
-			p.WallbangKills = kt.wallbang
-			p.CollateralKills = kt.collateral
+			kt.applyTo(p)
 		}
 
 		if ws := weapons[p.SteamID]; ws != nil {
