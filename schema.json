@@ -34,6 +34,20 @@
         },
         "exploded": {
           "type": "boolean"
+        },
+        "defuse_start_time_microseconds": {
+          "type": "integer",
+          "description": "the successful defuse's start, since round start"
+        },
+        "defuse_has_kit": {
+          "type": "boolean",
+          "description": "successful defuse used a kit"
+        },
+        "defuse_attempts": {
+          "items": {
+            "$ref": "#/$defs/DefuseAttempt"
+          },
+          "type": "array"
         }
       },
       "additionalProperties": false,
@@ -65,6 +79,17 @@
         "saved": {
           "type": "boolean",
           "description": "round lost but the clutcher lived"
+        },
+        "start_time_microseconds": {
+          "type": "integer",
+          "description": "when the clutch began, since round start"
+        },
+        "opponent_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "enemies alive when the clutch began, sorted ascending"
         }
       },
       "additionalProperties": false,
@@ -162,6 +187,13 @@
         "damage_type": {
           "type": "string",
           "description": "bullet / he / fire / knife / taser / bomb / world / other"
+        },
+        "attacker_position": {
+          "$ref": "#/$defs/Position",
+          "description": "set only when the positions stream is on, to keep core-tier output lean."
+        },
+        "victim_position": {
+          "$ref": "#/$defs/Position"
         }
       },
       "additionalProperties": false,
@@ -177,45 +209,77 @@
         "damage_type"
       ]
     },
-    "DroppedWeapon": {
+    "DefuseAttempt": {
       "properties": {
         "time_microseconds": {
-          "type": "integer"
+          "type": "integer",
+          "description": "start, since round start"
         },
-        "phase": {
-          "type": "string",
-          "description": "freezetime_end / first_contact / bomb_plant / round_end"
+        "defuser": {
+          "type": "string"
         },
-        "name": {
+        "has_kit": {
+          "type": "boolean"
+        },
+        "aborted": {
+          "type": "boolean",
+          "description": "started then cancelled (fake/forced off)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "time_microseconds",
+        "defuser"
+      ],
+      "description": "DefuseAttempt is one started defuse, completed or aborted."
+    },
+    "DroppedWeapon": {
+      "properties": {
+        "weapon": {
           "type": "string"
         },
         "class": {
-          "type": "string",
-          "description": "pistol / smg / heavy / rifle"
+          "type": "string"
         },
         "position": {
-          "$ref": "#/$defs/Position"
+          "$ref": "#/$defs/Position",
+          "description": "where it lies (static; rounded via toPosition)"
+        },
+        "dropped_at_microseconds": {
+          "type": "integer",
+          "description": "since round start"
+        },
+        "picked_up_at_microseconds": {
+          "type": "integer",
+          "description": "absent = still on ground at round end"
+        },
+        "last_owner": {
+          "type": "string",
+          "description": "who dropped it"
+        },
+        "picked_up_by": {
+          "type": "string"
+        },
+        "on_death": {
+          "type": "boolean",
+          "description": "last owner was dead when it dropped"
         },
         "ammo_magazine": {
           "type": "integer"
         },
         "ammo_reserve": {
           "type": "integer"
-        },
-        "last_owner": {
-          "type": "string"
-        },
-        "original_owner": {
-          "type": "string"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "name",
-        "class"
+        "weapon",
+        "position",
+        "dropped_at_microseconds"
       ],
-      "description": "DroppedWeapon is one gun lying in the world at a phase boundary."
+      "description": "DroppedWeapon is one gun-on-the-ground stint: it lies at Position from dropped_at until picked_up_at (absent = still down at round end)."
     },
     "Duel": {
       "properties": {
@@ -505,6 +569,13 @@
             "$ref": "#/$defs/GrenadeVictim"
           },
           "type": "array"
+        },
+        "fire_cells": {
+          "items": {
+            "$ref": "#/$defs/Position"
+          },
+          "type": "array",
+          "description": "peak per-flame fire footprint, sorted by x then y then z"
         }
       },
       "additionalProperties": false,
@@ -1031,6 +1102,14 @@
           "type": "string",
           "description": "clan name, empty in matchmaking/pugs"
         },
+        "color": {
+          "type": "string",
+          "description": "minimap slot color: yellow/purple/green/blue/orange. empty for grey/unknown"
+        },
+        "clan_tag": {
+          "type": "string",
+          "description": "per-player clan tag, distinct from team_name (the clan name)"
+        },
         "kills": {
           "type": "integer",
           "description": "Raw data"
@@ -1340,6 +1419,10 @@
         "position": {
           "$ref": "#/$defs/Position"
         },
+        "velocity": {
+          "$ref": "#/$defs/Position",
+          "description": "velocity vector (u/s), derived from the position delta (CS2 doesn't network m_vecVelocity)"
+        },
         "yaw": {
           "type": "number"
         },
@@ -1371,7 +1454,8 @@
           "type": "boolean"
         },
         "active_weapon": {
-          "type": "string"
+          "type": "string",
+          "description": "active weapon, always resolved (never empty). On a weapon-switch/defuse/dead\ntick where the engine reports no active weapon, this falls back to a sentinel:\n\"defuse_kit\" while defusing, \"c4\" while planting or carrying the bomb, else the\nlast-known active weapon for the player."
         },
         "is_walking": {
           "type": "boolean",
@@ -1390,6 +1474,10 @@
         "duck_amount": {
           "type": "number",
           "description": "0..1 partial crouch (raw m_flDuckAmount)"
+        },
+        "place": {
+          "type": "string",
+          "description": "m_szLastPlaceName callout region, e.g. \"Banana\", \"Mid\""
         }
       },
       "additionalProperties": false,
@@ -1449,6 +1537,10 @@
         "reason": {
           "type": "string",
           "description": "elimination / bomb_exploded / bomb_defused / time_expired"
+        },
+        "round_end_microseconds": {
+          "type": "integer",
+          "description": "round-live start to round end"
         },
         "post_round_microseconds": {
           "type": "integer",
@@ -1521,6 +1613,7 @@
         "winner_side",
         "winner_team",
         "reason",
+        "round_end_microseconds",
         "post_round_microseconds",
         "economy",
         "players",
@@ -1573,8 +1666,23 @@
         "assister": {
           "type": "string"
         },
+        "flash_assister": {
+          "type": "string"
+        },
         "weapon": {
           "type": "string"
+        },
+        "weapon_class": {
+          "type": "string",
+          "description": "pistol / smg / rifle / heavy / \"\" for bomb/world"
+        },
+        "kind": {
+          "type": "string",
+          "description": "player / bomb / world / suicide"
+        },
+        "collateral": {
+          "type": "boolean",
+          "description": "2+ kills shared the same (killer, time)"
         },
         "headshot": {
           "type": "boolean"
@@ -1655,6 +1763,8 @@
         "victim_side",
         "victim_position",
         "weapon",
+        "weapon_class",
+        "kind",
         "headshot",
         "wallbang",
         "penetration",

@@ -73,6 +73,10 @@ type parseGrenade struct {
 	damageDealt int
 	teamDamage  int
 	victims     []model.GrenadeVictim
+
+	// molotov/incendiary only: the inferno's widest per-flame footprint, captured
+	// at peak extent while polling and emitted as fire_cells.
+	fireCells []model.Position
 }
 
 // shotStatAcc is the per-round, per-(shooter,weapon) tally feeding round.shot_stats.
@@ -104,6 +108,7 @@ type parseState struct {
 	shotStats    map[uint64]map[string]*shotStatAcc // per (shooter, weapon) shots/spotted for round.shot_stats
 	lastInvHash  map[uint64]string                  // last inventory fingerprint per player, to skip unchanged snapshots
 	firstContact bool                               // latched at the round's first kill/damage, for first_contact snapshots
+	droppedOpen  map[int]*model.DroppedWeapon       // open gun-on-ground stints keyed by weapon entity id, closed on pickup / flushed at round end
 
 	// A starts CT, B starts T. Flipped on every side switch so a player's A/B
 	// identity stays put when the sides swap.
@@ -166,10 +171,12 @@ type economyState struct {
 // frameState holds the per-frame position sampling used to derive speed, since
 // CS2 doesn't network velocity.
 type frameState struct {
-	lastFrameSample time.Duration
-	lastPos         map[uint64]model.Position
-	lastPosTime     map[uint64]time.Duration
-	playerSpeed     map[uint64]float64
+	lastFrameSample  time.Duration
+	lastPos          map[uint64]model.Position
+	lastPosTime      map[uint64]time.Duration
+	playerSpeed      map[uint64]float64
+	playerVelocity   map[uint64]model.Position // per-frame velocity vector, same delta source as playerSpeed
+	lastActiveWeapon map[uint64]string         // last non-empty active weapon per player, for the active_weapon fallback
 }
 
 // newParseState builds the empty per-run state with every accumulator map ready.
@@ -183,6 +190,7 @@ func newParseState(parsed dem.Parser, opts Options, match *model.Match) *parseSt
 		dmgToVictim: map[uint64]int{},
 		shotStats:   map[uint64]map[string]*shotStatAcc{},
 		lastInvHash: map[uint64]string{},
+		droppedOpen: map[int]*model.DroppedWeapon{},
 		sideToTeam: map[common.Team]string{
 			common.TeamCounterTerrorists: "A",
 			common.TeamTerrorists:        "B",
@@ -216,9 +224,11 @@ func newParseState(parsed dem.Parser, opts Options, match *model.Match) *parseSt
 			buyCaptured: map[uint64]bool{},
 		},
 		frames: frameState{
-			lastPos:     map[uint64]model.Position{},
-			lastPosTime: map[uint64]time.Duration{},
-			playerSpeed: map[uint64]float64{},
+			lastPos:          map[uint64]model.Position{},
+			lastPosTime:      map[uint64]time.Duration{},
+			playerSpeed:      map[uint64]float64{},
+			playerVelocity:   map[uint64]model.Position{},
+			lastActiveWeapon: map[uint64]string{},
 		},
 	}
 }

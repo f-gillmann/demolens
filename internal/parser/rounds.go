@@ -3,6 +3,7 @@ package parser
 import (
 	"time"
 
+	"github.com/f-gillmann/demolens/internal/csdata"
 	"github.com/f-gillmann/demolens/model"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
@@ -41,11 +42,31 @@ func roundKill(e events.Kill, into time.Duration) model.RoundKill {
 	if e.Assister != nil && !e.AssistedFlash {
 		rk.Assister = e.Assister.SteamID64
 	}
+	if e.Assister != nil && e.AssistedFlash {
+		rk.FlashAssister = e.Assister.SteamID64
+	}
 	if e.Weapon != nil {
 		rk.Weapon = e.Weapon.String()
+		rk.WeaponClass = csdata.EquipmentClassName(e.Weapon.Class())
 	}
+	rk.Kind = killKind(e)
 
 	return rk
+}
+
+// killKind classifies a kill: suicide (killer is the victim), bomb or world (no
+// player killer), else a normal player kill.
+func killKind(e events.Kill) string {
+	if e.Killer == nil {
+		if e.Weapon != nil && e.Weapon.Type == common.EqBomb {
+			return "bomb"
+		}
+		return "world"
+	}
+	if e.Victim != nil && e.Killer.SteamID64 == e.Victim.SteamID64 {
+		return "suicide"
+	}
+	return "player"
 }
 
 func sideString(team common.Team) string {

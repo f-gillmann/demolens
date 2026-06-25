@@ -63,6 +63,7 @@ type GrenadeMolotov struct {
 	DamageDealt int             `json:"damage_dealt,omitempty"` // total HP fire damage to ENEMIES
 	TeamDamage  int             `json:"team_damage,omitempty"`  // total HP fire damage to TEAMMATES
 	Victims     []GrenadeVictim `json:"victims,omitempty"`
+	FireCells   []Position      `json:"fire_cells,omitempty"` // peak per-flame fire footprint, sorted by x then y then z
 }
 
 // GrenadeBasic is one thrown smoke or decoy. No outcome data exists for these types.

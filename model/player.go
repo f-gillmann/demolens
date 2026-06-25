@@ -4,7 +4,9 @@ type Player struct {
 	SteamID  uint64 `json:"steam_id,string"`
 	Name     string `json:"name"`
 	Team     string `json:"team"`
-	TeamName string `json:"team_name"` // clan name, empty in matchmaking/pugs
+	TeamName string `json:"team_name"`          // clan name, empty in matchmaking/pugs
+	Color    string `json:"color,omitempty"`    // minimap slot color: yellow/purple/green/blue/orange. empty for grey/unknown
+	ClanTag  string `json:"clan_tag,omitempty"` // per-player clan tag, distinct from team_name (the clan name)
 
 	// Raw data
 	Kills        int `json:"kills"`

@@ -17,10 +17,27 @@ func enrichKills(m *model.Match) {
 		side := sideMap(*r)
 		idx := newRoundIndex(*r)
 
+		// collateral: 2+ kills sharing the same (killer, time). world/bomb deaths
+		// (killer 0) are excluded, matching the per-player collateral tally.
+		type colKey struct {
+			killer uint64
+			time   int64
+		}
+		colCount := map[colKey]int{}
+		for _, k := range r.Kills {
+			if k.Killer != 0 {
+				colCount[colKey{k.Killer, k.TimeMicroseconds}]++
+			}
+		}
+
 		for ki := range r.Kills {
 			k := &r.Kills[ki]
 
 			k.Opening = ki == 0
+
+			if k.Killer != 0 && colCount[colKey{k.Killer, k.TimeMicroseconds}] >= 2 {
+				k.Collateral = true
+			}
 
 			if k.KillerSide == "" {
 				k.KillerSide = side[k.Killer]

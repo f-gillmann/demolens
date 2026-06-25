@@ -57,7 +57,6 @@ func (st *parseState) finalize() {
 	st.pending.Grenades = finalizeGrenades(st.grenades.pendingGrenades)
 	st.pending.ShotStats = finalizeShotStats(st.shotStats, st.pending.Damages)
 	st.snapshotInventories("round_end")
-	st.snapshotDroppedWeapons("round_end")
 	sortStreams(st.pending.Streams)
 	st.match.Rounds = append(st.match.Rounds, *st.pending)
 	st.pending = nil
@@ -142,6 +141,7 @@ func (st *parseState) onFreezetimeEnd(events.RoundFreezetimeEnd) {
 	st.grenades.grenadeSeq = 0
 	st.lastInvHash = map[uint64]string{}
 	st.firstContact = false
+	st.droppedOpen = map[int]*model.DroppedWeapon{}
 
 	st.roundLive = true
 }
@@ -172,6 +172,34 @@ func (st *parseState) onBombPlanted(e events.BombPlanted) {
 	st.snapshotInventories("bomb_plant")
 }
 
+// onBombDefuseStart logs a started defuse (fake or real) as an open attempt on the
+// current round's bomb. Defuse only happens post-plant, so the bomb exists.
+func (st *parseState) onBombDefuseStart(e events.BombDefuseStart) {
+	if st.pending == nil || st.pending.Bomb == nil {
+		return
+	}
+	att := model.DefuseAttempt{
+		TimeMicroseconds: st.roundMicros(),
+		HasKit:           e.HasKit,
+	}
+	if e.Player != nil {
+		st.track(e.Player.SteamID64, e.Player.Name)
+		att.Defuser = e.Player.SteamID64
+	}
+	st.pending.Bomb.DefuseAttempts = append(st.pending.Bomb.DefuseAttempts, att)
+}
+
+// onBombDefuseAborted marks the last still-open (non-aborted, uncompleted) attempt
+// as aborted: the defuser started then cancelled or got forced off.
+func (st *parseState) onBombDefuseAborted(events.BombDefuseAborted) {
+	if st.pending == nil || st.pending.Bomb == nil {
+		return
+	}
+	if att := lastOpenDefuse(st.pending.Bomb.DefuseAttempts); att != nil {
+		att.Aborted = true
+	}
+}
+
 func (st *parseState) onBombDefused(e events.BombDefused) {
 	if st.pending == nil || st.pending.Bomb == nil {
 		return
@@ -183,6 +211,22 @@ func (st *parseState) onBombDefused(e events.BombDefused) {
 		st.pending.Bomb.Defuser = e.Player.SteamID64
 		st.pending.Bomb.DefusePosition = positionOf(e.Player)
 	}
+	// pull the successful defuse's start/kit from its matching open attempt.
+	if att := lastOpenDefuse(st.pending.Bomb.DefuseAttempts); att != nil {
+		st.pending.Bomb.DefuseStartTimeMicroseconds = att.TimeMicroseconds
+		st.pending.Bomb.DefuseHasKit = att.HasKit
+	}
+}
+
+// lastOpenDefuse returns the last attempt that is neither aborted, scanning from the
+// end. nil when none are open.
+func lastOpenDefuse(attempts []model.DefuseAttempt) *model.DefuseAttempt {
+	for i := len(attempts) - 1; i >= 0; i-- {
+		if !attempts[i].Aborted {
+			return &attempts[i]
+		}
+	}
+	return nil
 }
 
 func (st *parseState) onBombExplode(events.BombExplode) {
@@ -198,8 +242,10 @@ func (st *parseState) onRoundEnd(end events.RoundEnd) {
 	st.pending.WinnerSide = sideString(end.Winner)
 	st.pending.WinnerTeam = st.sideToTeam[end.Winner]
 	st.pending.Reason = reasonString(end.Reason)
+	st.pending.RoundEndMicroseconds = st.roundMicros()
 	st.roundEndTime = st.parsed.CurrentTime()
 	st.roundLive = false // post-round: damage/shots/exit-kills still count, K/D doesn't
+	st.flushDroppedWeapons()
 }
 
 // snapshotInventories appends an inventory-change-log entry per playing player for
@@ -247,35 +293,79 @@ func inventoryFingerprint(ic model.InventoryChange) string {
 	return string(b)
 }
 
-// snapshotDroppedWeapons scans world guns (Owner == nil) and appends them to the
-// dropped_weapons stream for the given phase. Entries are sorted at finalize for
-// determinism.
-func (st *parseState) snapshotDroppedWeapons(phase string) {
-	if !st.opts.DroppedWeapons || st.pending == nil {
+// onDroppedWeaponsPoll tracks each gun-on-the-ground stint by polling weapon owner
+// transitions every frame (CS2 has no ground/pickup event). A gun with no owner
+// opens an interval; the same gun regaining an owner closes it as a pickup. Keyed
+// by the weapon entity id, which is stable for the life of the entity and reset
+// each round. Still-open intervals are flushed at round end.
+func (st *parseState) onDroppedWeaponsPoll(events.FrameDone) {
+	if !st.opts.DroppedWeapons || !st.roundLive || st.pending == nil {
 		return
 	}
-	streams := st.ensureStreams()
-	if streams == nil {
-		return
-	}
-	into := st.roundMicros()
 	for _, w := range st.parsed.GameState().Weapons() {
-		if w == nil || w.Owner != nil || !csdata.IsGun(w) {
-			continue // only guns count; held weapons, grenades, c4 and kits are not "dropped guns"
+		if w == nil || w.Entity == nil || !csdata.IsGun(w) {
+			continue // only guns; grenades, c4 and kits are not "dropped guns"
 		}
-		dw := model.DroppedWeapon{
-			TimeMicroseconds: into,
-			Phase:            phase,
-			Name:             w.String(),
-			Class:            csdata.EquipmentClassName(w.Class()),
-			Position:         equipmentPosition(w),
-			AmmoMagazine:     w.AmmoInMagazine(),
-			AmmoReserve:      w.AmmoReserve(),
-			LastOwner:        st.weaponPrevOwner(w),
-			OriginalOwner:    weaponOriginalOwner(w),
+		id := w.Entity.ID()
+		if w.Owner == nil {
+			if st.droppedOpen[id] != nil {
+				continue // already tracking this ground stint
+			}
+			lastOwner := st.weaponPrevOwner(w)
+			st.droppedOpen[id] = &model.DroppedWeapon{
+				Weapon:                w.String(),
+				Class:                 csdata.EquipmentClassName(w.Class()),
+				Position:              equipmentPosition(w),
+				DroppedAtMicroseconds: st.roundMicros(),
+				LastOwner:             lastOwner,
+				OnDeath:               st.playerDead(lastOwner),
+				AmmoMagazine:          w.AmmoInMagazine(),
+				AmmoReserve:           w.AmmoReserve(),
+			}
+			continue
 		}
-		streams.DroppedWeapons = append(streams.DroppedWeapons, dw)
+		// held again: close the open ground stint as a pickup.
+		if dw := st.droppedOpen[id]; dw != nil {
+			dw.PickedUpAtMicroseconds = st.roundMicros()
+			dw.PickedUpBy = w.Owner.SteamID64
+			st.appendDroppedWeapon(dw)
+			delete(st.droppedOpen, id)
+		}
 	}
+}
+
+// flushDroppedWeapons appends every still-open ground stint to the round stream
+// (no picked_up_* = still down at round end) and clears the open map.
+func (st *parseState) flushDroppedWeapons() {
+	if !st.opts.DroppedWeapons {
+		return
+	}
+	for _, dw := range st.droppedOpen {
+		st.appendDroppedWeapon(dw)
+	}
+	st.droppedOpen = map[int]*model.DroppedWeapon{}
+}
+
+// appendDroppedWeapon adds a finished ground stint to the round's dropped_weapons
+// stream, lazily allocating the stream holder.
+func (st *parseState) appendDroppedWeapon(dw *model.DroppedWeapon) {
+	if streams := st.ensureStreams(); streams != nil {
+		streams.DroppedWeapons = append(streams.DroppedWeapons, *dw)
+	}
+}
+
+// playerDead reports whether the player with this SteamID64 is currently not alive.
+// Unknown id (0 or not found among playing players) reports false.
+func (st *parseState) playerDead(id uint64) bool {
+	if id == 0 {
+		return false
+	}
+	for _, pl := range st.parsed.GameState().Participants().Playing() {
+		if pl.SteamID64 == id {
+			return !pl.IsAlive()
+		}
+	}
+	return false
 }
 
 // sortStreams sorts the map-derived stream slices for deterministic output. shots
@@ -307,24 +397,14 @@ func sortStreams(s *model.RoundStreams) {
 	})
 	sort.SliceStable(s.DroppedWeapons, func(i, j int) bool {
 		a, b := s.DroppedWeapons[i], s.DroppedWeapons[j]
-		if a.Name != b.Name {
-			return a.Name < b.Name
+		if a.DroppedAtMicroseconds != b.DroppedAtMicroseconds {
+			return a.DroppedAtMicroseconds < b.DroppedAtMicroseconds
 		}
-		ax, ay := droppedXY(a)
-		bx, by := droppedXY(b)
-		if ax != bx {
-			return ax < bx
+		if a.Weapon != b.Weapon {
+			return a.Weapon < b.Weapon
 		}
-		return ay < by
+		return a.LastOwner < b.LastOwner
 	})
-}
-
-// droppedXY is a dropped weapon's x/y for sorting, 0/0 when its position is absent.
-func droppedXY(w model.DroppedWeapon) (float64, float64) {
-	if w.Position == nil {
-		return 0, 0
-	}
-	return w.Position.X, w.Position.Y
 }
 
 // finalizeShotStats flattens the per-round shot tally into the sorted shot_stats

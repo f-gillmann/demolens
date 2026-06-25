@@ -17,10 +17,11 @@ const fireCheckPeriod = 200 * time.Millisecond
 // liveInferno is an active fire we poll to catch its burn-out (all flames gone,
 // whether it burned out on its own or got smoked off).
 type liveInferno struct {
-	inferno     *common.Inferno
-	grenade     *parseGrenade
-	hadFire     bool // saw at least one flame. guards the pre-ignition frame.
-	lastChecked time.Duration
+	inferno       *common.Inferno
+	grenade       *parseGrenade
+	hadFire       bool // saw at least one flame. guards the pre-ignition frame.
+	lastChecked   time.Duration
+	peakFireCount int // widest active-flame count seen, gates the fire_cells snapshot
 }
 
 // finalizeMatch runs the post-parse aggregation: match meta, duel matrix, and the
@@ -426,6 +427,19 @@ func sortVictims(v []model.GrenadeVictim) {
 	sort.Slice(v, func(i, j int) bool { return v[i].SteamID < v[j].SteamID })
 }
 
+// sortPositions orders positions by x then y then z for deterministic output.
+func sortPositions(p []model.Position) {
+	sort.Slice(p, func(i, j int) bool {
+		if p[i].X != p[j].X {
+			return p[i].X < p[j].X
+		}
+		if p[i].Y != p[j].Y {
+			return p[i].Y < p[j].Y
+		}
+		return p[i].Z < p[j].Z
+	})
+}
+
 func sortFlashed(f []model.FlashedPlayer) {
 	sort.Slice(f, func(i, j int) bool { return f[i].SteamID < f[j].SteamID })
 }
@@ -494,6 +508,7 @@ func (g *parseGrenade) toMolotov() model.GrenadeMolotov {
 		DamageDealt:              g.damageDealt,
 		TeamDamage:               g.teamDamage,
 		Victims:                  g.victims,
+		FireCells:                g.fireCells,
 	}
 }
 

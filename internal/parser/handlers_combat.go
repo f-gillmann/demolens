@@ -294,7 +294,7 @@ func (st *parseState) onPlayerHurt(hurt events.PlayerHurt) {
 	// timeline, live round only. trade/clutch analysis reads this.
 	if st.roundLive {
 		st.markFirstContact()
-		st.pending.Damages = append(st.pending.Damages, damageEvent(hurt, st.parsed.CurrentTime()-st.roundStart, dmg))
+		st.pending.Damages = append(st.pending.Damages, damageEvent(hurt, st.parsed.CurrentTime()-st.roundStart, dmg, st.opts.PlayerFrames))
 	}
 }
 
@@ -516,14 +516,15 @@ func (st *parseState) recordCounterStrafe(fire events.WeaponFire, csVisible bool
 	}
 }
 
-// onItemPickup records a true pickup: a gun whose original owner isn't the holder
-// (buys/own re-grabs have owner 0 or self). FromEnemy means the original owner was
-// on the opposing side this round. Live round only.
+// onItemPickup records a true pickup: a weapon (gun or grenade) whose original
+// owner isn't the holder (buys/own re-grabs have owner 0 or self, and stay
+// filtered out). FromEnemy means the original owner was on the opposing side this
+// round. Live round only.
 func (st *parseState) onItemPickup(e events.ItemPickup) {
 	if st.parsed.GameState().IsWarmupPeriod() || !st.roundLive {
 		return
 	}
-	if e.Player == nil || e.Player.SteamID64 == 0 || !csdata.IsGun(e.Weapon) {
+	if e.Player == nil || e.Player.SteamID64 == 0 || e.Weapon == nil {
 		return
 	}
 

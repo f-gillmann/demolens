@@ -1,12 +1,17 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import (
+	"sort"
+
+	"github.com/f-gillmann/demolens/model"
+)
 
 // snapshot of when a side dropped to its last man.
 type clutchStart struct {
-	side      string
-	opponents int   // enemies still up at that moment
-	startTime int64 // round time when it kicked off
+	side        string
+	opponents   int      // enemies still up at that moment
+	startTime   int64    // round time when it kicked off
+	opponentIDs []uint64 // those enemies' steamids
 }
 
 // finds 1vN per round (one side down to its last player, enemies left alive),
@@ -44,7 +49,11 @@ func computeClutches(m *model.Match) {
 				for id := range alive[s] {
 					last = id
 				}
-				starts[last] = clutchStart{side: s, opponents: len(alive[other]), startTime: k.TimeMicroseconds}
+				opp := make([]uint64, 0, len(alive[other]))
+				for id := range alive[other] {
+					opp = append(opp, id)
+				}
+				starts[last] = clutchStart{side: s, opponents: len(alive[other]), startTime: k.TimeMicroseconds, opponentIDs: opp}
 			}
 		}
 
@@ -72,11 +81,15 @@ func buildClutch(r *model.Round, clutcher uint64, start clutchStart) model.Clutc
 	}
 
 	won := r.WinnerSide == start.side
+	opp := append([]uint64(nil), start.opponentIDs...)
+	sort.Slice(opp, func(i, j int) bool { return opp[i] < opp[j] })
 	return model.Clutch{
-		Opponents: start.opponents,
-		Kills:     kills,
-		Won:       won,
-		Saved:     !won && !died,
+		Opponents:             start.opponents,
+		Kills:                 kills,
+		Won:                   won,
+		Saved:                 !won && !died,
+		StartTimeMicroseconds: start.startTime,
+		OpponentIDs:           opp,
 	}
 }
 

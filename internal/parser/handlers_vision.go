@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/f-gillmann/demolens/model"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
@@ -30,7 +31,7 @@ func (st *parseState) onPlayerFrames(events.FrameDone) {
 	into := (cur - st.roundStart).Microseconds()
 	for _, pl := range st.parsed.GameState().Participants().Playing() {
 		if side := sideString(pl.Team); side != "" {
-			streams.Positions = append(streams.Positions, playerFrame(pl, side, into))
+			streams.Positions = append(streams.Positions, st.playerFrame(pl, side, into))
 		}
 	}
 }
@@ -70,6 +71,7 @@ func (st *parseState) onSpeedSample(events.FrameDone) {
 		if prev, ok := st.frames.lastPos[pl.SteamID64]; ok {
 			if dt := (cur - st.frames.lastPosTime[pl.SteamID64]).Seconds(); dt > 0 {
 				st.frames.playerSpeed[pl.SteamID64] = horizontalSpeed(pos, prev, dt)
+				st.frames.playerVelocity[pl.SteamID64] = model.Position{X: (pos.X - prev.X) / dt, Y: (pos.Y - prev.Y) / dt, Z: (pos.Z - prev.Z) / dt}
 			}
 		}
 		st.frames.lastPos[pl.SteamID64] = pos

@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"strings"
+
 	"github.com/f-gillmann/demolens/model"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
@@ -43,6 +45,16 @@ func captureTeams(gs dem.GameState, players map[uint64]*model.Player, sideToTeam
 		}
 		if cc := pl.CrosshairCode(); cc != "" {
 			rec.CrosshairCode = cc
+		}
+
+		// minimap slot color + per-player clan tag. ColorOrErr() panics on demos
+		// without the prop (it uses PropertyValueMust), so read the color prop
+		// defensively here. grey (-1) / unknown stay empty (omitempty drops them).
+		if ci, ok := propI(pl.Entity, "m_iCompTeammateColor"); ok && common.Color(ci) != common.Grey {
+			rec.Color = strings.ToLower(common.Color(ci).String())
+		}
+		if ct := pl.ClanTag(); ct != "" {
+			rec.ClanTag = ct
 		}
 	}
 }

@@ -10,8 +10,9 @@ import (
 )
 
 // damageEvent turns a PlayerHurt into our damage record. into is time since the
-// round went live.
-func damageEvent(e events.PlayerHurt, into time.Duration, healthDamage int) model.Damage {
+// round went live. withPositions rides the positions stream, so attacker/victim
+// world positions only attach when that heavy stream is on.
+func damageEvent(e events.PlayerHurt, into time.Duration, healthDamage int, withPositions bool) model.Damage {
 	d := model.Damage{
 		TimeMicroseconds: into.Microseconds(),
 		HealthDamage:     healthDamage,
@@ -28,6 +29,17 @@ func damageEvent(e events.PlayerHurt, into time.Duration, healthDamage int) mode
 	if e.Weapon != nil {
 		d.Weapon = e.Weapon.String()
 		d.DamageType = damageType(e.Weapon)
+	}
+
+	if withPositions {
+		if e.Attacker != nil {
+			p := toPosition(e.Attacker.Position())
+			d.AttackerPosition = &p
+		}
+		if e.Player != nil {
+			p := toPosition(e.Player.Position())
+			d.VictimPosition = &p
+		}
 	}
 
 	return d

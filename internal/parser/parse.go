@@ -140,12 +140,16 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 	parsed.RegisterEventHandler(st.onInfernoPoll)
 	parsed.RegisterEventHandler(st.onInfernoExpired)
 
+	parsed.RegisterEventHandler(st.onDroppedWeaponsPoll)
+
 	parsed.RegisterEventHandler(st.onSmokeStartTrack)
 	parsed.RegisterEventHandler(st.onSmokeExpiredTrack)
 
 	parsed.RegisterEventHandler(st.onPlayerFlashed)
 
 	parsed.RegisterEventHandler(st.onBombPlanted)
+	parsed.RegisterEventHandler(st.onBombDefuseStart)
+	parsed.RegisterEventHandler(st.onBombDefuseAborted)
 	parsed.RegisterEventHandler(st.onBombDefused)
 	parsed.RegisterEventHandler(st.onBombExplode)
 

@@ -37,16 +37,18 @@ type InventoryChange struct {
 	Equipment        []LoadoutItem   `json:"equipment,omitempty"`
 }
 
-// DroppedWeapon is one gun lying in the world at a phase boundary. last_owner is the
-// most recent holder before it hit the ground; original_owner is the first owner.
+// DroppedWeapon is one gun-on-the-ground stint: it lies at Position from
+// dropped_at until picked_up_at (absent = still down at round end). last_owner is
+// the holder who dropped it; on_death marks a drop forced by that owner dying.
 type DroppedWeapon struct {
-	TimeMicroseconds int64     `json:"time_microseconds,omitempty"`
-	Phase            string    `json:"phase,omitempty"` // freezetime_end / first_contact / bomb_plant / round_end
-	Name             string    `json:"name"`
-	Class            string    `json:"class"` // pistol / smg / heavy / rifle
-	Position         *Position `json:"position,omitempty"`
-	AmmoMagazine     int       `json:"ammo_magazine,omitempty"`
-	AmmoReserve      int       `json:"ammo_reserve,omitempty"`
-	LastOwner        uint64    `json:"last_owner,omitempty,string"`
-	OriginalOwner    uint64    `json:"original_owner,omitempty,string"`
+	Weapon                 string    `json:"weapon"`
+	Class                  string    `json:"class,omitempty"`
+	Position               *Position `json:"position"`                            // where it lies (static; rounded via toPosition)
+	DroppedAtMicroseconds  int64     `json:"dropped_at_microseconds"`             // since round start
+	PickedUpAtMicroseconds int64     `json:"picked_up_at_microseconds,omitempty"` // absent = still on ground at round end
+	LastOwner              uint64    `json:"last_owner,omitempty,string"`         // who dropped it
+	PickedUpBy             uint64    `json:"picked_up_by,omitempty,string"`
+	OnDeath                bool      `json:"on_death,omitempty"` // last owner was dead when it dropped
+	AmmoMagazine           int       `json:"ammo_magazine,omitempty"`
+	AmmoReserve            int       `json:"ammo_reserve,omitempty"`
 }

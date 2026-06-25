@@ -143,8 +143,9 @@ func (st *parseState) onInfernoPoll(events.FrameDone) {
 			continue
 		}
 		li.lastChecked = cur
-		if len(li.inferno.Fires().Active().List()) > 0 {
+		if active := li.inferno.Fires().Active().List(); len(active) > 0 {
 			li.hadFire = true
+			st.snapshotPeakFire(li, active)
 			continue
 		}
 		if li.hadFire { // was burning, now all out (burned out or smoked off)
@@ -152,6 +153,22 @@ func (st *parseState) onInfernoPoll(events.FrameDone) {
 			delete(st.grenades.liveInfernos, uid)
 		}
 	}
+}
+
+// snapshotPeakFire records the inferno's widest active-flame footprint as the
+// candidate fire_cells. Only a strictly larger active set replaces the prior peak,
+// so fire_cells ends up the real multi-cell footprint, sorted for determinism.
+func (st *parseState) snapshotPeakFire(li *liveInferno, active []common.Fire) {
+	if len(active) <= li.peakFireCount {
+		return
+	}
+	li.peakFireCount = len(active)
+	cells := make([]model.Position, 0, len(active))
+	for _, fire := range active {
+		cells = append(cells, toPosition(fire.Vector))
+	}
+	sortPositions(cells)
+	li.grenade.fireCells = cells
 }
 
 // onInfernoExpired is the fallback expiry for the case the poll above never caught it.

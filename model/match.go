@@ -80,6 +80,7 @@ type Round struct {
 	WinnerSide            string         `json:"winner_side"`
 	WinnerTeam            string         `json:"winner_team"`             // "A" or "B"
 	Reason                string         `json:"reason"`                  // elimination / bomb_exploded / bomb_defused / time_expired
+	RoundEndMicroseconds  int64          `json:"round_end_microseconds"`  // round-live start to round end
 	PostRoundMicroseconds int64          `json:"post_round_microseconds"` // round end to next freeze, the exit window
 	Economy               RoundEconomy   `json:"economy"`
 	Players               []RoundPlayer  `json:"players"`
@@ -118,25 +119,42 @@ type Bomb struct {
 	DefuseTimeMicroseconds int64    `json:"defuse_time_microseconds,omitempty"` // since round start
 	DefusePosition         Position `json:"defuse_position,omitempty"`
 	Exploded               bool     `json:"exploded"`
+
+	DefuseStartTimeMicroseconds int64           `json:"defuse_start_time_microseconds,omitempty"` // the successful defuse's start, since round start
+	DefuseHasKit                bool            `json:"defuse_has_kit,omitempty"`                 // successful defuse used a kit
+	DefuseAttempts              []DefuseAttempt `json:"defuse_attempts,omitempty"`
+}
+
+// DefuseAttempt is one started defuse, completed or aborted.
+type DefuseAttempt struct {
+	TimeMicroseconds int64  `json:"time_microseconds"` // start, since round start
+	Defuser          uint64 `json:"defuser,string"`
+	HasKit           bool   `json:"has_kit,omitempty"`
+	Aborted          bool   `json:"aborted,omitempty"` // started then cancelled (fake/forced off)
 }
 
 // PlayerFrame is one player's sampled position and state at a single frame.
 type PlayerFrame struct {
-	TimeMicroseconds int64    `json:"time_microseconds"` // since round start
-	SteamID          uint64   `json:"steam_id,string"`
-	Side             string   `json:"side"`
-	Position         Position `json:"position"`
-	Yaw              float64  `json:"yaw"`
-	Pitch            float64  `json:"pitch"`
-	Health           int      `json:"health"`
-	Armor            int      `json:"armor"`
-	Money            int      `json:"money"`
-	IsAlive          bool     `json:"is_alive"`
-	IsAirborne       bool     `json:"is_airborne"`
-	IsScoped         bool     `json:"is_scoped"`
-	IsDucking        bool     `json:"is_ducking"`
-	HasDefuseKit     bool     `json:"has_defuse_kit"`
-	ActiveWeapon     string   `json:"active_weapon"`
+	TimeMicroseconds int64     `json:"time_microseconds"` // since round start
+	SteamID          uint64    `json:"steam_id,string"`
+	Side             string    `json:"side"`
+	Position         Position  `json:"position"`
+	Velocity         *Position `json:"velocity,omitempty"` // velocity vector (u/s), derived from the position delta (CS2 doesn't network m_vecVelocity)
+	Yaw              float64   `json:"yaw"`
+	Pitch            float64   `json:"pitch"`
+	Health           int       `json:"health"`
+	Armor            int       `json:"armor"`
+	Money            int       `json:"money"`
+	IsAlive          bool      `json:"is_alive"`
+	IsAirborne       bool      `json:"is_airborne"`
+	IsScoped         bool      `json:"is_scoped"`
+	IsDucking        bool      `json:"is_ducking"`
+	HasDefuseKit     bool      `json:"has_defuse_kit"`
+	// active weapon, always resolved (never empty). On a weapon-switch/defuse/dead
+	// tick where the engine reports no active weapon, this falls back to a sentinel:
+	// "defuse_kit" while defusing, "c4" while planting or carrying the bomb, else the
+	// last-known active weapon for the player.
+	ActiveWeapon string `json:"active_weapon"`
 
 	// cheap per-frame state. ride only on the positions frame, not on kills.
 	IsWalking  bool    `json:"is_walking,omitempty"` // walk (shift) modifier held
@@ -144,6 +162,7 @@ type PlayerFrame struct {
 	InBombZone bool    `json:"in_bomb_zone,omitempty"`
 	Stamina    float64 `json:"stamina,omitempty"`     // jump/landing stamina
 	DuckAmount float64 `json:"duck_amount,omitempty"` // 0..1 partial crouch (raw m_flDuckAmount)
+	Place      string  `json:"place,omitempty"`       // m_szLastPlaceName callout region, e.g. "Banana", "Mid"
 }
 
 // Shot is one weapon-fire event plus the shooter's geometry.
@@ -221,6 +240,9 @@ type Clutch struct {
 	Kills     int  `json:"kills"`     // clutcher kills during it
 	Won       bool `json:"won"`       // clutcher's side took the round
 	Saved     bool `json:"saved"`     // round lost but the clutcher lived
+
+	StartTimeMicroseconds int64       `json:"start_time_microseconds,omitempty"` // when the clutch began, since round start
+	OpponentIDs           SteamIDList `json:"opponent_ids,omitempty"`            // enemies alive when the clutch began, sorted ascending
 }
 
 type RoundEconomy struct {
@@ -244,7 +266,11 @@ type RoundKill struct {
 	VictimSide       string   `json:"victim_side"` // CT/T at this round
 	VictimPosition   Position `json:"victim_position"`
 	Assister         uint64   `json:"assister,omitempty,string"`
+	FlashAssister    uint64   `json:"flash_assister,omitempty,string"`
 	Weapon           string   `json:"weapon"`
+	WeaponClass      string   `json:"weapon_class"`         // pistol / smg / rifle / heavy / "" for bomb/world
+	Kind             string   `json:"kind"`                 // player / bomb / world / suicide
+	Collateral       bool     `json:"collateral,omitempty"` // 2+ kills shared the same (killer, time)
 	Headshot         bool     `json:"headshot"`
 	Wallbang         bool     `json:"wallbang"`
 	Penetration      int      `json:"penetration"` // objects the bullet passed through
@@ -280,6 +306,10 @@ type Damage struct {
 	HitGroup         string `json:"hit_group"`   // head / chest / stomach / left_arm / ... / generic
 	Weapon           string `json:"weapon"`      // e.g. AK-47, HE Grenade, Molotov
 	DamageType       string `json:"damage_type"` // bullet / he / fire / knife / taser / bomb / world / other
+
+	// set only when the positions stream is on, to keep core-tier output lean.
+	AttackerPosition *Position `json:"attacker_position,omitempty"`
+	VictimPosition   *Position `json:"victim_position,omitempty"`
 }
 
 type Position struct {
