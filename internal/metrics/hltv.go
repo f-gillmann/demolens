@@ -1,6 +1,6 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import "github.com/f-gillmann/demolens/v2/model"
 
 // published HLTV Rating 1.0 / 2.0 coefficients.
 const (

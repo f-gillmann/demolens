@@ -3,8 +3,8 @@ package parser
 import (
 	"sort"
 
-	"github.com/f-gillmann/demolens/internal/csdata"
-	"github.com/f-gillmann/demolens/model"
+	"github.com/f-gillmann/demolens/v2/internal/csdata"
+	"github.com/f-gillmann/demolens/v2/model"
 	"github.com/golang/geo/r3"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 )

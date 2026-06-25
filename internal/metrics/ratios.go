@@ -1,6 +1,6 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import "github.com/f-gillmann/demolens/v2/model"
 
 func killDeathRatio(p model.Player) float64 {
 	if p.Deaths == 0 {

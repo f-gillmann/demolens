@@ -3,8 +3,8 @@ package parser
 import (
 	"time"
 
-	"github.com/f-gillmann/demolens/internal/geom"
-	"github.com/f-gillmann/demolens/model"
+	"github.com/f-gillmann/demolens/v2/internal/geom"
+	"github.com/f-gillmann/demolens/v2/model"
 	"github.com/golang/geo/r3"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"

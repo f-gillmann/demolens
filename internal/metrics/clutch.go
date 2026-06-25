@@ -3,7 +3,7 @@ package metrics
 import (
 	"sort"
 
-	"github.com/f-gillmann/demolens/model"
+	"github.com/f-gillmann/demolens/v2/model"
 )
 
 // snapshot of when a side dropped to its last man.

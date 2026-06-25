@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/f-gillmann/demolens"
+	"github.com/f-gillmann/demolens/v2"
 	"github.com/spf13/cobra"
 )
 

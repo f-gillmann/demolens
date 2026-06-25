@@ -3,7 +3,7 @@ package metrics
 import (
 	"sort"
 
-	"github.com/f-gillmann/demolens/model"
+	"github.com/f-gillmann/demolens/v2/model"
 )
 
 // squared distance (game units) under which a live teammate is close enough to

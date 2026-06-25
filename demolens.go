@@ -3,11 +3,11 @@ package demolens
 import (
 	"io"
 
-	"github.com/f-gillmann/demolens/internal/demofile"
-	"github.com/f-gillmann/demolens/internal/maps"
-	"github.com/f-gillmann/demolens/internal/metrics"
-	"github.com/f-gillmann/demolens/internal/parser"
-	"github.com/f-gillmann/demolens/model"
+	"github.com/f-gillmann/demolens/v2/internal/demofile"
+	"github.com/f-gillmann/demolens/v2/internal/maps"
+	"github.com/f-gillmann/demolens/v2/internal/metrics"
+	"github.com/f-gillmann/demolens/v2/internal/parser"
+	"github.com/f-gillmann/demolens/v2/model"
 )
 
 // Options re-exports parser.Options, mostly so callers can flip on the heavy

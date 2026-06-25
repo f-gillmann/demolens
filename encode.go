@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/f-gillmann/demolens/model"
+	"github.com/f-gillmann/demolens/v2/model"
 )
 
 // WriteJSON encodes the match as JSON to w. minify omits indentation (compact);

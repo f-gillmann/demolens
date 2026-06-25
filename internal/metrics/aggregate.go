@@ -1,6 +1,6 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import "github.com/f-gillmann/demolens/v2/model"
 
 // Aggregates per-round stats into match totals; must run first (used by KD, ADR, rating).
 func aggregateRounds(m *model.Match) {

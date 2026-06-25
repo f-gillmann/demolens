@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/f-gillmann/demolens/internal/geom"
+	"github.com/f-gillmann/demolens/v2/internal/geom"
 	"github.com/qmuntal/gltf"
 	"github.com/qmuntal/gltf/modeler"
 )

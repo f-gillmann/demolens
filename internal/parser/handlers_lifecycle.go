@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"github.com/f-gillmann/demolens/model"
+	"github.com/f-gillmann/demolens/v2/model"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )

@@ -1,6 +1,6 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import "github.com/f-gillmann/demolens/v2/model"
 
 // Compute calculates all per-player and match-level metrics.
 func Compute(m *model.Match) {

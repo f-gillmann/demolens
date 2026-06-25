@@ -1,6 +1,6 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import "github.com/f-gillmann/demolens/v2/model"
 
 // kastValues returns KAST per player as 0-100. that's the fraction of rounds
 // where they did at least one of: kill, assist, survive, or got traded.

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/f-gillmann/demolens"
-	"github.com/f-gillmann/demolens/internal/maps"
+	"github.com/f-gillmann/demolens/v2"
+	"github.com/f-gillmann/demolens/v2/internal/maps"
 	"github.com/spf13/cobra"
 )
 

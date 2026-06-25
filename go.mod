@@ -1,4 +1,4 @@
-module github.com/f-gillmann/demolens
+module github.com/f-gillmann/demolens/v2
 
 go 1.26.3
 

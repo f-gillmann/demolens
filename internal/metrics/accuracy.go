@@ -1,6 +1,6 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import "github.com/f-gillmann/demolens/v2/model"
 
 // Accuracy is hits/shots. Head accuracy excludes AWP per competitive convention.
 func accuracyStats(m *model.Match) {

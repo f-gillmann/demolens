@@ -7,7 +7,7 @@ import (
 	"os"
 	"reflect"
 
-	"github.com/f-gillmann/demolens/model"
+	"github.com/f-gillmann/demolens/v2/model"
 	"github.com/invopop/jsonschema"
 	"github.com/spf13/cobra"
 )
@@ -26,7 +26,7 @@ func schemaCmd() *cobra.Command {
 
 			// best-effort: Go doc comments only resolve when run from the repo
 			// root, so a failure here just means no descriptions.
-			_ = r.AddGoComments("github.com/f-gillmann/demolens", "./")
+			_ = r.AddGoComments("github.com/f-gillmann/demolens/v2", "./")
 
 			// the model package custom-marshals these two types into shapes the
 			// reflector cannot infer from their Go fields, so we override them

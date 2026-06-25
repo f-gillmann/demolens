@@ -52,7 +52,7 @@ demolens extract-map --in world_physics_physics.glb --key de_mirage
 From Go:
 
 ```go
-import "github.com/f-gillmann/demolens/maps"
+import "github.com/f-gillmann/demolens/v2/maps"
 path, n, err := maps.Extract(maps.Params{CS2Dir: cs2, Map: "de_mirage", OutDir: "tris"})
 ```
 

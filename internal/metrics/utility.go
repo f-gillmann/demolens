@@ -1,6 +1,6 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import "github.com/f-gillmann/demolens/v2/model"
 
 // turns a player's utility totals into per-throw averages.
 func computeUtilityAverages(p *model.Player) {

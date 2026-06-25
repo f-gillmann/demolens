@@ -3,7 +3,7 @@ package metrics
 import (
 	"sort"
 
-	"github.com/f-gillmann/demolens/model"
+	"github.com/f-gillmann/demolens/v2/model"
 )
 
 // per player, how many rounds ended with exactly n kills. n maxes out at 5 (ace).

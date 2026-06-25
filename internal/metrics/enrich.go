@@ -1,6 +1,6 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import "github.com/f-gillmann/demolens/v2/model"
 
 // enrichKills annotates each round's kills with duel context: opening, traded
 // and traded_by, possible_traders, and sides. Sides are set at parse time; we

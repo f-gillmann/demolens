@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/f-gillmann/demolens/internal/cli"
+	"github.com/f-gillmann/demolens/v2/internal/cli"
 )
 
 func main() {

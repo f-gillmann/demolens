@@ -13,7 +13,7 @@ CS2 demo analyzer written in Go. Feed it a `.dem` file, get per-player and per-r
 ## Install
 
 ```sh
-go install github.com/f-gillmann/demolens/cmd/demolens@latest
+go install github.com/f-gillmann/demolens/v2/cmd/demolens@latest
 ```
 
 Or build from a checkout:
@@ -42,7 +42,7 @@ Mesh setup lives in [docs/maps.md](docs/maps.md).
 ## Library
 
 ```go
-import "github.com/f-gillmann/demolens"
+import "github.com/f-gillmann/demolens/v2"
 
 f, _ := os.Open("match.dem")
 defer f.Close()

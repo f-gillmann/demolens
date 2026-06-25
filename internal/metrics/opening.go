@@ -1,6 +1,6 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import "github.com/f-gillmann/demolens/v2/model"
 
 // tags each round's opening duel (just the first kill), flags both players on
 // their RoundPlayer, and totals opening stats per side.

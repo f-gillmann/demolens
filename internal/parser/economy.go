@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"github.com/f-gillmann/demolens/model"
+	"github.com/f-gillmann/demolens/v2/model"
 )
 
 // roundEconomy sums each side's buy-window-close equipment value from the

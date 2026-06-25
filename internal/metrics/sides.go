@@ -1,6 +1,6 @@
 package metrics
 
-import "github.com/f-gillmann/demolens/model"
+import "github.com/f-gillmann/demolens/v2/model"
 
 // clutchForSide returns the per-side clutch tally for "CT"/"T", nil otherwise.
 func clutchForSide(p *model.Player, side string) *model.ClutchStats {
