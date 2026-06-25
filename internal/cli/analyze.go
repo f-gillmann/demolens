@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +12,7 @@ import (
 
 func analyzeCmd() *cobra.Command {
 	var out string
+	var minify, gzipOut bool
 	var opts demolens.Options
 	opts.Calibration = demolens.DefaultCalibration()
 
@@ -39,7 +39,11 @@ func analyzeCmd() *cobra.Command {
 			if out != "" {
 				path = out
 				if info, serr := os.Stat(out); serr == nil && info.IsDir() {
-					path = filepath.Join(out, result.FileHash+".json")
+					name := result.FileHash + ".json"
+					if gzipOut {
+						name += ".gz"
+					}
+					path = filepath.Join(out, name)
 				}
 				outFile, ferr := os.Create(path)
 				if ferr != nil {
@@ -49,9 +53,12 @@ func analyzeCmd() *cobra.Command {
 				w = outFile
 			}
 
-			enc := json.NewEncoder(w)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(result); err != nil {
+			if gzipOut {
+				err = demolens.WriteGzJSON(w, result, minify)
+			} else {
+				err = demolens.WriteJSON(w, result, minify)
+			}
+			if err != nil {
 				return err
 			}
 			if path != "" {
@@ -62,12 +69,14 @@ func analyzeCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&out, "out", "o", "", "write JSON to a file path, or a directory to name it <file_hash>.json (default: stdout)")
+	cmd.Flags().BoolVar(&minify, "minify", false, "compact JSON output (no indentation)")
+	cmd.Flags().BoolVar(&gzipOut, "gzip", false, "gzip-compress the output (adds .gz when -o names by file_hash)")
 	cmd.Flags().StringVar(&opts.Tier, "tier", "full", "stream preset: core (no streams), detail (positions/shots/grenade-paths), full (all streams)")
 	cmd.Flags().BoolVarP(&opts.PlayerFrames, "positions", "p", false, "override the 'positions' stream (per-frame player positions + state, large output)")
 	cmd.Flags().BoolVarP(&opts.Shots, "shots", "s", false, "override the 'shots' stream (per-shot shooter geometry, large output)")
 	cmd.Flags().BoolVarP(&opts.GrenadePaths, "grenade-paths", "g", false, "override the 'grenade_paths' stream (grenade trajectories + bounces, large output)")
 	cmd.Flags().BoolVar(&opts.Inventory, "inventory", false, "override the 'inventory' stream (mid-round inventory change log)")
-	cmd.Flags().BoolVar(&opts.DroppedWeapons, "dropped-weapons", false, "override the 'dropped_weapons' stream (world weapons at phase boundaries)")
+	cmd.Flags().BoolVar(&opts.DroppedWeapons, "dropped-weapons", false, "override the 'dropped_weapons' stream (ground-weapon intervals: dropped guns + when picked up)")
 	calibration := &opts.Calibration
 	cmd.Flags().StringVar(&opts.MapsDir, "maps-dir", "tris", "dir of .tri map meshes for time-to-damage line of sight")
 	cmd.Flags().Float64Var(&calibration.CrosshairConeDeg, "crosshair-cone", calibration.CrosshairConeDeg, "crosshair appearance cone (deg)")
