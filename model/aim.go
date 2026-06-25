@@ -5,8 +5,8 @@ type Duel struct {
 	Killer       uint64         `json:"killer,string"`
 	Victim       uint64         `json:"victim,string"`
 	Kills        int            `json:"kills"`
-	Damage       int            `json:"damage"`                   // health damage killer dealt to victim
-	TimeToDamage float64        `json:"time_to_damage,omitempty"` // avg ms seeing to first damage, needs a map mesh
+	Damage       int            `json:"damage"`                      // health damage killer dealt to victim
+	TimeToDamage float64        `json:"time_to_damage_ms,omitempty"` // avg ms seeing to first damage, needs a map mesh
 	Weapons      map[string]int `json:"weapons,omitempty"`
 }
 
@@ -14,7 +14,7 @@ type Duel struct {
 // fired and the share of those bullets that landed.
 type WeaponSpray struct {
 	Sprays   int     `json:"sprays"`
-	Accuracy float64 `json:"accuracy"`
+	Accuracy float64 `json:"accuracy_pct"`
 }
 
 // SprayDeviation holds how a player's sprays with one weapon matched its recoil
@@ -29,12 +29,11 @@ type SprayDeviation struct {
 }
 
 // SprayBullet compares, at a given shot index, the ideal aim offset that cancels
-// the recoil pattern (should) against what the player actually did (player). Both
-// in degrees from the first shot. Good sprayers track should closely.
+// the recoil pattern (ideal) against what the player actually did (actual). Both
+// in degrees from the first shot. Good sprayers track ideal closely.
 type SprayBullet struct {
-	Index   int     `json:"index"`
-	ShouldX float64 `json:"should_x"`
-	ShouldY float64 `json:"should_y"`
-	PlayerX float64 `json:"player_x"`
-	PlayerY float64 `json:"player_y"`
+	IdealX  float64 `json:"ideal_x"`
+	IdealY  float64 `json:"ideal_y"`
+	ActualX float64 `json:"actual_x"`
+	ActualY float64 `json:"actual_y"`
 }

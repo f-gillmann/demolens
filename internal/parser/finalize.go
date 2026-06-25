@@ -26,7 +26,7 @@ type liveInferno struct {
 // finalizeMatch runs the post-parse aggregation: match meta, duel matrix, and the
 // per-player counter-strafe/spotted/spray/TTD/crosshair stats.
 func (st *parseState) finalizeMatch() {
-	st.match.SchemaVersion = 4
+	st.match.SchemaVersion = 5
 	st.match.Meta.TickRate = st.parsed.TickRate()
 	st.match.Meta.DurationMicroseconds = st.parsed.CurrentTime().Microseconds()
 	st.match.Meta.TotalRounds = len(st.match.Rounds)
@@ -172,8 +172,10 @@ func (st *parseState) finalizeSprayDeviation() {
 				}
 				px, py := acc.sumX[i]/float64(acc.n[i]), acc.sumY[i]/float64(acc.n[i])
 				sx, sy := -pattern[i].X, -pattern[i].Y
+				// store rounded display values; avg_deviation below uses the
+				// full-precision px,py,sx,sy locals, so it is unaffected.
 				dev.Bullets = append(dev.Bullets, model.SprayBullet{
-					Index: i, ShouldX: sx, ShouldY: sy, PlayerX: px, PlayerY: py,
+					IdealX: round3(sx), IdealY: round3(sy), ActualX: round3(px), ActualY: round3(py),
 				})
 				dx, dy := px-sx, py-sy
 				devSum += math.Sqrt(dx*dx + dy*dy)

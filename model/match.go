@@ -1,6 +1,7 @@
 package model
 
 import (
+	"math"
 	"strconv"
 )
 
@@ -27,12 +28,12 @@ func (l SteamIDList) MarshalJSON() ([]byte, error) {
 
 type Match struct {
 	FileHash         string      `json:"file_hash"`      // SHA-256 of the demo bytes
-	SchemaVersion    int         `json:"schema_version"` // const 4
+	SchemaVersion    int         `json:"schema_version"` // const 5
 	Meta             Meta        `json:"meta"`
 	Players          []Player    `json:"players"`
 	Rounds           []Round     `json:"rounds"`
-	DuelMatrixTotal  []Duel      `json:"duel_matrix_total"`  // whole-match head-to-head rollup with per-pair TTD
-	FlashMatrixTotal []FlashPair `json:"flash_matrix_total"` // whole-match who-blinded-whom rollup
+	DuelMatrixTotal  []Duel      `json:"duel_pairs"`  // whole-match head-to-head pairs/edge list with per-pair TTD
+	FlashMatrixTotal []FlashPair `json:"flash_pairs"` // whole-match who-blinded-whom pairs/edge list
 
 	// match-level connect/disconnect/bot-takeover log, playing-team players only,
 	// sorted by time at finalize for determinism.
@@ -153,7 +154,7 @@ type Shot struct {
 	Position         Position `json:"position"`
 	Yaw              float64  `json:"yaw"`
 	Pitch            float64  `json:"pitch"`
-	RecoilIndex      float64  `json:"recoil_index"` // shots into the current spray
+	RecoilIndex      float64  `json:"recoil_index"` // engine recoil index: shot number into the current spray. map against the shipped spray_patterns instead of reimplementing recoil math
 }
 
 // RoundPlayer is one player's contribution in a single round. This is the
@@ -223,8 +224,8 @@ type Clutch struct {
 }
 
 type RoundEconomy struct {
-	CT TeamEconomy `json:"ct"`
-	T  TeamEconomy `json:"t"`
+	CT TeamEconomy `json:"CT"`
+	T  TeamEconomy `json:"T"`
 }
 
 type TeamEconomy struct {
@@ -285,6 +286,31 @@ type Position struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
 	Z float64 `json:"z"`
+}
+
+// round2 rounds f to 2 decimals and clears the negative-zero sign bit so the
+// JSON shows 0 instead of -0. Output-only; never feeds a metric computation.
+func round2(f float64) float64 {
+	r := math.Round(f*100) / 100
+	if r == 0 {
+		r = 0
+	}
+	return r
+}
+
+// MarshalJSON rounds X/Y/Z to 2 decimals for output. Because this runs only at
+// encode time, the in-memory full-precision values still feed all geometry and
+// metric math; this rounds every exported position in one place.
+func (p Position) MarshalJSON() ([]byte, error) {
+	out := make([]byte, 0, 48)
+	out = append(out, `{"x":`...)
+	out = strconv.AppendFloat(out, round2(p.X), 'f', -1, 64)
+	out = append(out, `,"y":`...)
+	out = strconv.AppendFloat(out, round2(p.Y), 'f', -1, 64)
+	out = append(out, `,"z":`...)
+	out = strconv.AppendFloat(out, round2(p.Z), 'f', -1, 64)
+	out = append(out, '}')
+	return out, nil
 }
 
 type AlivePlayer struct {

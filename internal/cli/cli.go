@@ -24,6 +24,6 @@ func NewRoot() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
-	root.AddCommand(checkCmd(), analyzeCmd(), extractCmd())
+	root.AddCommand(checkCmd(), analyzeCmd(), extractCmd(), schemaCmd())
 	return root
 }

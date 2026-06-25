@@ -439,8 +439,8 @@ func (st *parseState) onWeaponFire(fire events.WeaponFire) {
 				Shooter:          fire.Shooter.SteamID64,
 				Weapon:           fire.Weapon.String(),
 				Position:         toPosition(fire.Shooter.Position()),
-				Yaw:              float64(fire.Shooter.ViewDirectionX()),
-				Pitch:            float64(fire.Shooter.ViewDirectionY()),
+				Yaw:              round2(float64(fire.Shooter.ViewDirectionX())),
+				Pitch:            round2(float64(fire.Shooter.ViewDirectionY())),
 				RecoilIndex:      float64(fire.Weapon.RecoilIndex()),
 			})
 		}

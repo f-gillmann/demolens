@@ -24,16 +24,16 @@ type Player struct {
 	KPR          float64 `json:"kpr"`
 	DPR          float64 `json:"dpr"`
 	APR          float64 `json:"apr"`
-	KAST         float64 `json:"kast"`
-	HSPercent    float64 `json:"hs_percent"`    // headshot kills / kills
-	Accuracy     float64 `json:"accuracy"`      // hits / shots fired
-	HeadAccuracy float64 `json:"head_accuracy"` // head hits / hits, AWP excluded
+	KAST         float64 `json:"kast_pct"`
+	HSPercent    float64 `json:"hs_pct"`            // headshot kills / kills
+	Accuracy     float64 `json:"accuracy_pct"`      // hits / shots fired
+	HeadAccuracy float64 `json:"head_accuracy_pct"` // head hits / hits, AWP excluded
 	// The omitempty fields below need a map mesh for line of sight and are dropped when none is loaded.
-	SpottedAccuracy          float64 `json:"spotted_accuracy,omitempty"`       // hits / shots, enemy in view
+	SpottedAccuracy          float64 `json:"spotted_accuracy_pct,omitempty"`   // hits / shots, enemy in view
 	SpottedShots             int     `json:"spotted_shots,omitempty"`          // denominator of the above
 	SpottedHits              int     `json:"spotted_hits,omitempty"`           // numerator
-	SprayAccuracy            float64 `json:"spray_accuracy,omitempty"`         // share of spray bullets that hit
-	TimeToDamage             float64 `json:"time_to_damage,omitempty"`         // avg ms, seeing an enemy to first damage
+	SprayAccuracy            float64 `json:"spray_accuracy_pct,omitempty"`     // share of spray bullets that hit
+	TimeToDamage             float64 `json:"time_to_damage_ms,omitempty"`      // avg ms, seeing an enemy to first damage
 	TimeToDamageSamples      int     `json:"time_to_damage_samples,omitempty"` // engagements measured. low means noisy
 	CrosshairPlacement       float64 `json:"crosshair_placement"`              // median deg moved from sighting to hit
 	CrosshairSamples         int     `json:"crosshair_samples"`                // low means noisy
@@ -95,10 +95,10 @@ type Player struct {
 // shots at an enemy in vision (not fully crouched) and call a shot "good" when
 // speed sits below 40% of the weapon's max move speed.
 type CounterStrafe struct {
-	Shots       int     `json:"shots"`        // rifle shots measured, enemy in vision, not crouched
-	Stopped     int     `json:"stopped"`      // of those, fired under the accuracy speed cap
-	StoppedRate float64 `json:"stopped_rate"` // stopped / shots, as a percent
-	AvgSpeed    float64 `json:"avg_speed"`    // avg horizontal speed when firing, u/s
+	Shots       int     `json:"shots"`            // rifle shots measured, enemy in vision, not crouched
+	Stopped     int     `json:"stopped"`          // of those, fired under the accuracy speed cap
+	StoppedRate float64 `json:"stopped_rate_pct"` // stopped / shots, as a percent
+	AvgSpeed    float64 `json:"avg_speed"`        // avg horizontal speed when firing, u/s
 }
 
 // OpeningStats sums up a player's opening-duel involvement.

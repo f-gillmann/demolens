@@ -113,7 +113,7 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 	}()
 
 	opts.ResolveTier() // turn the tier preset into the stream booleans before we wire handlers
-	match := &model.Match{SchemaVersion: 4}
+	match := &model.Match{SchemaVersion: 5}
 	st := newParseState(parsed, opts, match)
 
 	parsed.RegisterNetMessageHandler(st.onServerInfo)

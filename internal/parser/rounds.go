@@ -9,6 +9,10 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
+// unitsPerMeter converts the engine's meter-based kill distance into Source game
+// units, matching killer_position/victim_position.
+const unitsPerMeter = 39.37
+
 // roundKill turns a Kill event into our kill record. into is time since the
 // round went live.
 func roundKill(e events.Kill, into time.Duration) model.RoundKill {
@@ -19,7 +23,7 @@ func roundKill(e events.Kill, into time.Duration) model.RoundKill {
 		Penetration:      e.PenetratedObjects,
 		ThroughSmoke:     e.ThroughSmoke,
 		NoScope:          e.NoScope,
-		Distance:         float64(e.Distance),
+		Distance:         round2(float64(e.Distance) * unitsPerMeter),
 		AttackerBlind:    e.AttackerBlind,
 	}
 
