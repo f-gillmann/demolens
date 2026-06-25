@@ -379,7 +379,7 @@
         "side": {
           "type": "string"
         },
-        "type": {
+        "kind": {
           "type": "string",
           "description": "\"smoke\" or \"decoy\""
         },
@@ -407,7 +407,7 @@
       "required": [
         "grenade_id",
         "thrower",
-        "type",
+        "kind",
         "throw_time_microseconds",
         "throw_position"
       ],
@@ -424,7 +424,7 @@
         "side": {
           "type": "string"
         },
-        "type": {
+        "kind": {
           "type": "string",
           "description": "const \"flash\""
         },
@@ -461,7 +461,7 @@
       "required": [
         "grenade_id",
         "thrower",
-        "type",
+        "kind",
         "throw_time_microseconds",
         "throw_position"
       ],
@@ -478,7 +478,7 @@
         "side": {
           "type": "string"
         },
-        "type": {
+        "kind": {
           "type": "string",
           "description": "const \"he\""
         },
@@ -517,7 +517,7 @@
       "required": [
         "grenade_id",
         "thrower",
-        "type",
+        "kind",
         "throw_time_microseconds",
         "throw_position"
       ],
@@ -534,7 +534,7 @@
         "side": {
           "type": "string"
         },
-        "type": {
+        "kind": {
           "type": "string",
           "description": "\"molotov\" or \"incendiary\""
         },
@@ -583,7 +583,7 @@
       "required": [
         "grenade_id",
         "thrower",
-        "type",
+        "kind",
         "throw_time_microseconds",
         "throw_position"
       ],
@@ -742,7 +742,7 @@
     },
     "LifecycleEvent": {
       "properties": {
-        "type": {
+        "kind": {
           "type": "string",
           "description": "disconnect / connect / bot_connect / bot_taken_over"
         },
@@ -764,7 +764,7 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "type",
+        "kind",
         "steam_id",
         "round",
         "time_microseconds"
@@ -1478,6 +1478,10 @@
         "place": {
           "type": "string",
           "description": "m_szLastPlaceName callout region, e.g. \"Banana\", \"Mid\""
+        },
+        "hold_frames": {
+          "type": "integer",
+          "description": "HoldFrames is the number of additional 250ms samples this exact state\npersisted; the consumer holds the player static for HoldFrames more sample\nperiods after time_microseconds (no interpolation during a hold). 0/absent =\na normal single frame. Set by the finalize-time RLE compression pass."
         }
       },
       "additionalProperties": false,

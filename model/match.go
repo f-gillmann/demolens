@@ -42,7 +42,7 @@ type Match struct {
 
 // LifecycleEvent is one connection/bot transition for a playing-team player.
 type LifecycleEvent struct {
-	Type             string `json:"type"`            // disconnect / connect / bot_connect / bot_taken_over
+	Type             string `json:"kind"`            // disconnect / connect / bot_connect / bot_taken_over
 	SteamID          uint64 `json:"steam_id,string"` // matches the steam_id string convention used across the model
 	Name             string `json:"name,omitempty"`
 	Round            int    `json:"round"` // 1-based round in progress at the event
@@ -163,6 +163,12 @@ type PlayerFrame struct {
 	Stamina    float64 `json:"stamina,omitempty"`     // jump/landing stamina
 	DuckAmount float64 `json:"duck_amount,omitempty"` // 0..1 partial crouch (raw m_flDuckAmount)
 	Place      string  `json:"place,omitempty"`       // m_szLastPlaceName callout region, e.g. "Banana", "Mid"
+
+	// HoldFrames is the number of additional 250ms samples this exact state
+	// persisted; the consumer holds the player static for HoldFrames more sample
+	// periods after time_microseconds (no interpolation during a hold). 0/absent =
+	// a normal single frame. Set by the finalize-time RLE compression pass.
+	HoldFrames int `json:"hold_frames,omitempty"`
 }
 
 // Shot is one weapon-fire event plus the shooter's geometry.

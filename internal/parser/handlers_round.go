@@ -57,6 +57,7 @@ func (st *parseState) finalize() {
 	st.pending.Grenades = finalizeGrenades(st.grenades.pendingGrenades)
 	st.pending.ShotStats = finalizeShotStats(st.shotStats, st.pending.Damages)
 	st.snapshotInventories("round_end")
+	st.flushDroppedWeapons() // any ground stints still open after the post-round
 	sortStreams(st.pending.Streams)
 	st.match.Rounds = append(st.match.Rounds, *st.pending)
 	st.pending = nil
@@ -144,12 +145,44 @@ func (st *parseState) onFreezetimeEnd(events.RoundFreezetimeEnd) {
 	st.droppedOpen = map[int]*model.DroppedWeapon{}
 
 	st.roundLive = true
+	st.framePhase = phaseLive
+	st.flushPreroll()
+}
+
+// flushPreroll rebases the buffered freezetime frames onto the new round's timeline
+// (negative time = before go-live) and appends those within prerollWindow to the
+// round's positions stream, then clears the buffer. Called once the new pending and
+// roundStart are set. The per-frame state was captured at buffer time, which is what
+// we want; only the timestamp is rewritten here.
+func (st *parseState) flushPreroll() {
+	if len(st.prerollBuf) == 0 {
+		return
+	}
+	cutoff := st.roundStart - prerollWindow
+	if streams := st.ensureStreams(); streams != nil {
+		for _, b := range st.prerollBuf {
+			if b.abs < cutoff {
+				continue
+			}
+			b.frame.TimeMicroseconds = (b.abs - st.roundStart).Microseconds()
+			streams.Positions = append(streams.Positions, b.frame)
+		}
+	}
+	st.prerollBuf = nil
 }
 
 // onRoundStart: the next round's freezetime starting means the exit window just
 // closed. record how long it was open.
 func (st *parseState) onRoundStart(events.RoundStart) {
-	if st.parsed.GameState().IsWarmupPeriod() || st.pending == nil || st.roundLive {
+	if st.parsed.GameState().IsWarmupPeriod() {
+		return
+	}
+	// the upcoming round's freezetime begins: start buffering its pre-roll and stop
+	// attaching frames to the previous round (still the current pending until its
+	// finalize at the next freezetime end).
+	st.framePhase = phaseFreeze
+	st.prerollBuf = nil
+	if st.pending == nil || st.roundLive {
 		return
 	}
 	st.pending.PostRoundMicroseconds = (st.parsed.CurrentTime() - st.roundEndTime).Microseconds()
@@ -245,7 +278,10 @@ func (st *parseState) onRoundEnd(end events.RoundEnd) {
 	st.pending.RoundEndMicroseconds = st.roundMicros()
 	st.roundEndTime = st.parsed.CurrentTime()
 	st.roundLive = false // post-round: damage/shots/exit-kills still count, K/D doesn't
-	st.flushDroppedWeapons()
+	st.framePhase = phasePost
+	// dropped weapons keep polling through the post-round (exit-frag drops), so the
+	// open ground stints are flushed at finalize rather than here, to avoid re-opening
+	// and double-counting guns that stay down across round end.
 }
 
 // snapshotInventories appends an inventory-change-log entry per playing player for
@@ -299,7 +335,9 @@ func inventoryFingerprint(ic model.InventoryChange) string {
 // by the weapon entity id, which is stable for the life of the entity and reset
 // each round. Still-open intervals are flushed at round end.
 func (st *parseState) onDroppedWeaponsPoll(events.FrameDone) {
-	if !st.opts.DroppedWeapons || !st.roundLive || st.pending == nil {
+	// run during the live round and the post-round (exit-frag drops), but not during
+	// freezetime, where pending is the previous round.
+	if !st.opts.DroppedWeapons || st.pending == nil || (!st.roundLive && st.framePhase != phasePost) {
 		return
 	}
 	for _, w := range st.parsed.GameState().Weapons() {
@@ -382,6 +420,7 @@ func sortStreams(s *model.RoundStreams) {
 		}
 		return a.SteamID < b.SteamID
 	})
+	s.Positions = compressPositions(s.Positions)
 	sort.SliceStable(s.GrenadePaths, func(i, j int) bool {
 		return s.GrenadePaths[i].GrenadeID < s.GrenadePaths[j].GrenadeID
 	})
@@ -405,6 +444,100 @@ func sortStreams(s *model.RoundStreams) {
 		}
 		return a.LastOwner < b.LastOwner
 	})
+}
+
+// compressPositions collapses runs of byte-identical consecutive per-player frames
+// into a single frame carrying a hold count (RLE). Input MUST already be time-then-
+// steam_id sorted (sortStreams does this just above). Within each player's frames a
+// run of identical states is folded onto one kept frame whose HoldFrames counts the
+// dropped samples; a time gap larger than ~1.5 sample periods (e.g. a disconnect)
+// breaks the run even when the state is identical. Output is re-sorted by time then
+// steam_id so it stays deterministic and consistent with the rest of the stream.
+func compressPositions(frames []model.PlayerFrame) []model.PlayerFrame {
+	if len(frames) == 0 {
+		return frames
+	}
+
+	// max gap that still counts as the immediate next sample of a run.
+	maxGap := int64(frameSamplePeriod/time.Microsecond) * 3 / 2
+
+	// group by steam_id, preserving the incoming time order within each group.
+	order := make([]uint64, 0)
+	byPlayer := make(map[uint64][]model.PlayerFrame)
+	for _, f := range frames {
+		if _, ok := byPlayer[f.SteamID]; !ok {
+			order = append(order, f.SteamID)
+		}
+		byPlayer[f.SteamID] = append(byPlayer[f.SteamID], f)
+	}
+
+	out := make([]model.PlayerFrame, 0, len(frames))
+	for _, id := range order {
+		group := byPlayer[id]
+		kept := group[0]
+		lastSeen := kept.TimeMicroseconds
+		for i := 1; i < len(group); i++ {
+			f := group[i]
+			gap := f.TimeMicroseconds - lastSeen
+			if gap > 0 && gap <= maxGap && sameFrameState(&f, &kept) {
+				kept.HoldFrames++
+				lastSeen = f.TimeMicroseconds
+				continue
+			}
+			out = append(out, kept)
+			kept = f
+			lastSeen = f.TimeMicroseconds
+		}
+		out = append(out, kept)
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].TimeMicroseconds != out[j].TimeMicroseconds {
+			return out[i].TimeMicroseconds < out[j].TimeMicroseconds
+		}
+		return out[i].SteamID < out[j].SteamID
+	})
+	return out
+}
+
+// sameFrameState reports whether two player frames carry an identical state,
+// ignoring TimeMicroseconds and HoldFrames (the only fields RLE is allowed to vary
+// within a run). Velocity is a pointer so the struct can't be compared with ==.
+// Floats are compared exactly: they are already rounded to 2dp at populate time, so
+// identical static frames compare equal.
+func sameFrameState(a, b *model.PlayerFrame) bool {
+	if a.SteamID != b.SteamID || a.Side != b.Side {
+		return false
+	}
+	if a.Position != b.Position {
+		return false
+	}
+	if a.Yaw != b.Yaw || a.Pitch != b.Pitch {
+		return false
+	}
+	if a.Health != b.Health || a.Armor != b.Armor || a.Money != b.Money {
+		return false
+	}
+	if a.IsAlive != b.IsAlive || a.IsAirborne != b.IsAirborne || a.IsScoped != b.IsScoped ||
+		a.IsDucking != b.IsDucking || a.HasDefuseKit != b.HasDefuseKit {
+		return false
+	}
+	if a.ActiveWeapon != b.ActiveWeapon {
+		return false
+	}
+	if a.IsWalking != b.IsWalking || a.InBuyZone != b.InBuyZone || a.InBombZone != b.InBombZone {
+		return false
+	}
+	if a.Stamina != b.Stamina || a.DuckAmount != b.DuckAmount || a.Place != b.Place {
+		return false
+	}
+	if (a.Velocity == nil) != (b.Velocity == nil) {
+		return false
+	}
+	if a.Velocity != nil && *a.Velocity != *b.Velocity {
+		return false
+	}
+	return true
 }
 
 // finalizeShotStats flattens the per-round shot tally into the sorted shot_stats

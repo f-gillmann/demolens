@@ -14,9 +14,15 @@ import (
 const losParallelThreshold = 16
 
 // onPlayerFrames samples player pos + state each frame into the round's positions
-// stream (opt-in), throttled so output stays bounded.
+// stream (opt-in), throttled so output stays bounded. The capture spans the last
+// prerollWindow of freezetime (buffered, negative time), the live round and the
+// post-round (into > round_end). 0 stays go-live so kill/bomb times are unchanged.
 func (st *parseState) onPlayerFrames(events.FrameDone) {
-	if !st.opts.PlayerFrames || !st.roundLive || st.pending == nil {
+	if !st.opts.PlayerFrames {
+		return
+	}
+	gs := st.parsed.GameState()
+	if gs.IsWarmupPeriod() {
 		return
 	}
 	cur := st.parsed.CurrentTime()
@@ -24,12 +30,28 @@ func (st *parseState) onPlayerFrames(events.FrameDone) {
 		return
 	}
 	st.frames.lastFrameSample = cur
+
+	if st.framePhase == phaseFreeze {
+		// buffer the upcoming round's freeze; pending here is the previous round, so
+		// do not touch it. into is a placeholder, rebased negative at the flush.
+		for _, pl := range gs.Participants().Playing() {
+			if side := sideString(pl.Team); side != "" {
+				st.prerollBuf = append(st.prerollBuf, bufferedFrame{abs: cur, frame: st.playerFrame(pl, side, 0)})
+			}
+		}
+		return
+	}
+
+	// phaseLive or phasePost: attach to the current round.
+	if st.pending == nil {
+		return
+	}
 	streams := st.ensureStreams()
 	if streams == nil {
 		return
 	}
 	into := (cur - st.roundStart).Microseconds()
-	for _, pl := range st.parsed.GameState().Participants().Playing() {
+	for _, pl := range gs.Participants().Playing() {
 		if side := sideString(pl.Team); side != "" {
 			streams.Positions = append(streams.Positions, st.playerFrame(pl, side, into))
 		}

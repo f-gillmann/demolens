@@ -16,7 +16,7 @@ type GrenadeFlash struct {
 	GrenadeID                string   `json:"grenade_id"`
 	Thrower                  uint64   `json:"thrower,string"`
 	Side                     string   `json:"side,omitempty"`
-	Type                     string   `json:"type"` // const "flash"
+	Type                     string   `json:"kind"` // const "flash"
 	ThrowTimeMicroseconds    int64    `json:"throw_time_microseconds"`
 	DetonateTimeMicroseconds int64    `json:"detonate_time_microseconds,omitempty"`
 	FlightMicroseconds       int64    `json:"flight_microseconds,omitempty"`
@@ -34,7 +34,7 @@ type GrenadeHE struct {
 	GrenadeID                string   `json:"grenade_id"`
 	Thrower                  uint64   `json:"thrower,string"`
 	Side                     string   `json:"side,omitempty"`
-	Type                     string   `json:"type"` // const "he"
+	Type                     string   `json:"kind"` // const "he"
 	ThrowTimeMicroseconds    int64    `json:"throw_time_microseconds"`
 	DetonateTimeMicroseconds int64    `json:"detonate_time_microseconds,omitempty"`
 	FlightMicroseconds       int64    `json:"flight_microseconds,omitempty"`
@@ -52,7 +52,7 @@ type GrenadeMolotov struct {
 	GrenadeID                string   `json:"grenade_id"`
 	Thrower                  uint64   `json:"thrower,string"`
 	Side                     string   `json:"side,omitempty"`
-	Type                     string   `json:"type"` // "molotov" or "incendiary"
+	Type                     string   `json:"kind"` // "molotov" or "incendiary"
 	ThrowTimeMicroseconds    int64    `json:"throw_time_microseconds"`
 	DetonateTimeMicroseconds int64    `json:"detonate_time_microseconds,omitempty"`
 	ExpireTimeMicroseconds   int64    `json:"expire_time_microseconds,omitempty"`
@@ -71,7 +71,7 @@ type GrenadeBasic struct {
 	GrenadeID                string   `json:"grenade_id"`
 	Thrower                  uint64   `json:"thrower,string"`
 	Side                     string   `json:"side,omitempty"`
-	Type                     string   `json:"type"` // "smoke" or "decoy"
+	Type                     string   `json:"kind"` // "smoke" or "decoy"
 	ThrowTimeMicroseconds    int64    `json:"throw_time_microseconds"`
 	DetonateTimeMicroseconds int64    `json:"detonate_time_microseconds,omitempty"`
 	ExpireTimeMicroseconds   int64    `json:"expire_time_microseconds,omitempty"`

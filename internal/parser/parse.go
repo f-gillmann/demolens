@@ -97,6 +97,10 @@ func (o Options) enabledStreamNames() []string {
 
 const frameSamplePeriod = 250 * time.Millisecond
 
+// prerollWindow is how much of each round's freezetime the positions stream keeps
+// before go-live, emitted as negative timestamps down to about -prerollWindow.
+const prerollWindow = 5 * time.Second
+
 // longest pause between two shots that still counts as one spray
 const sprayGap = 300 * time.Millisecond
 

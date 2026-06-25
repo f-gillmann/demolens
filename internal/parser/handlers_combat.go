@@ -432,7 +432,8 @@ func (st *parseState) onWeaponFire(fire events.WeaponFire) {
 
 	// per-shot stream (opt-in). full rate, never downsampled, so shot geometry
 	// stays intact. shot_stats above is the always-on aggregate when this is off.
-	if st.opts.Shots && st.roundLive {
+	// post-round included so exit-frag shots land in the same pending(N).
+	if st.opts.Shots && (st.roundLive || st.framePhase == phasePost) {
 		if streams := st.ensureStreams(); streams != nil {
 			streams.Shots = append(streams.Shots, model.Shot{
 				TimeMicroseconds: st.roundMicros(),

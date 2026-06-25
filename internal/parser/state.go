@@ -87,6 +87,22 @@ type shotStatAcc struct {
 	spotted int
 }
 
+// frame-capture phase for the positions stream. Drives onPlayerFrames: live/post
+// attach frames to the current round, freeze buffers the upcoming round's pre-roll.
+// phaseFreeze is the zero value so a fresh parseState starts buffering.
+const (
+	phaseFreeze = iota
+	phaseLive
+	phasePost
+)
+
+// bufferedFrame is a freezetime position snapshot held until the round goes live,
+// then rebased to a negative timestamp relative to go-live at the pre-roll flush.
+type bufferedFrame struct {
+	abs   time.Duration
+	frame model.PlayerFrame
+}
+
 // parseState holds the accumulator maps and per-parse state for one Parse run.
 // Per-subsystem accumulators live in sub-structs; core fields stay at the top.
 type parseState struct {
@@ -103,6 +119,9 @@ type parseState struct {
 	pendingPlayers map[uint64]*model.RoundPlayer
 	roundLive      bool           // true between freezetime end and round end
 	dmgToVictim    map[uint64]int // cumulative health damage per victim this round, capped at 100hp to fix the demoinfocs shotgun killing-pellet overcount
+
+	framePhase int             // positions-stream capture phase, see phase consts
+	prerollBuf []bufferedFrame // freezetime frames awaiting rebase onto the next round at go-live
 
 	// per-round accumulators, reset at freezetime end.
 	shotStats    map[uint64]map[string]*shotStatAcc // per (shooter, weapon) shots/spotted for round.shot_stats
