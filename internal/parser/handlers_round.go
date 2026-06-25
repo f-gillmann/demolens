@@ -92,7 +92,7 @@ func (st *parseState) onFileHeader(header *msg.CDemoFileHeader) {
 
 // onTeamSideSwitch flips the side-to-team mapping at halftime and at each OT half
 // so identity stays anchored to the first-half side.
-func (st *parseState) onTeamSideSwitch(events.TeamSideSwitch) {
+func (st *parseState) onTeamSideSwitch(_ events.TeamSideSwitch) {
 	if st.parsed.GameState().IsWarmupPeriod() {
 		return
 	}
@@ -102,7 +102,7 @@ func (st *parseState) onTeamSideSwitch(events.TeamSideSwitch) {
 
 // onFreezetimeEnd means buys are done and the round goes live. finalize the
 // previous round first (so its post-round events make it in), then open a new one.
-func (st *parseState) onFreezetimeEnd(events.RoundFreezetimeEnd) {
+func (st *parseState) onFreezetimeEnd(_ events.RoundFreezetimeEnd) {
 	gs := st.parsed.GameState()
 	if gs.IsWarmupPeriod() {
 		return
@@ -173,7 +173,7 @@ func (st *parseState) flushPreroll() {
 
 // onRoundStart: the next round's freezetime starting means the exit window just
 // closed. record how long it was open.
-func (st *parseState) onRoundStart(events.RoundStart) {
+func (st *parseState) onRoundStart(_ events.RoundStart) {
 	if st.parsed.GameState().IsWarmupPeriod() {
 		return
 	}
@@ -224,7 +224,7 @@ func (st *parseState) onBombDefuseStart(e events.BombDefuseStart) {
 
 // onBombDefuseAborted marks the last still-open (non-aborted, uncompleted) attempt
 // as aborted: the defuser started then cancelled or got forced off.
-func (st *parseState) onBombDefuseAborted(events.BombDefuseAborted) {
+func (st *parseState) onBombDefuseAborted(_ events.BombDefuseAborted) {
 	if st.pending == nil || st.pending.Bomb == nil {
 		return
 	}
@@ -262,7 +262,7 @@ func lastOpenDefuse(attempts []model.DefuseAttempt) *model.DefuseAttempt {
 	return nil
 }
 
-func (st *parseState) onBombExplode(events.BombExplode) {
+func (st *parseState) onBombExplode(_ events.BombExplode) {
 	if st.pending != nil && st.pending.Bomb != nil {
 		st.pending.Bomb.Exploded = true
 	}
@@ -334,7 +334,7 @@ func inventoryFingerprint(ic model.InventoryChange) string {
 // opens an interval; the same gun regaining an owner closes it as a pickup. Keyed
 // by the weapon entity id, which is stable for the life of the entity and reset
 // each round. Still-open intervals are flushed at round end.
-func (st *parseState) onDroppedWeaponsPoll(events.FrameDone) {
+func (st *parseState) onDroppedWeaponsPoll(_ events.FrameDone) {
 	// run during the live round and the post-round (exit-frag drops), but not during
 	// freezetime, where pending is the previous round.
 	if !st.opts.DroppedWeapons || st.pending == nil || (!st.roundLive && st.framePhase != phasePost) {

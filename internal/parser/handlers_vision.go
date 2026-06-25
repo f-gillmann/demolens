@@ -17,7 +17,7 @@ const losParallelThreshold = 16
 // stream (opt-in), throttled so output stays bounded. The capture spans the last
 // prerollWindow of freezetime (buffered, negative time), the live round and the
 // post-round (into > round_end). 0 stays go-live so kill/bomb times are unchanged.
-func (st *parseState) onPlayerFrames(events.FrameDone) {
+func (st *parseState) onPlayerFrames(_ events.FrameDone) {
 	if !st.opts.PlayerFrames {
 		return
 	}
@@ -60,7 +60,7 @@ func (st *parseState) onPlayerFrames(events.FrameDone) {
 
 // onBuyWindowClose locks each survivor's equipment value at the buy deadline, once
 // per round. Dead players were capped in onKill; disconnects keep their freeze seed.
-func (st *parseState) onBuyWindowClose(events.FrameDone) {
+func (st *parseState) onBuyWindowClose(_ events.FrameDone) {
 	if !st.roundLive || st.pendingPlayers == nil || st.econ.buyWindowClosed {
 		return
 	}
@@ -86,7 +86,7 @@ func (st *parseState) onBuyWindowClose(events.FrameDone) {
 
 // onSpeedSample remembers every player's position each frame. CS2 doesn't network
 // velocity, so kill speed comes from this frame-to-frame delta.
-func (st *parseState) onSpeedSample(events.FrameDone) {
+func (st *parseState) onSpeedSample(_ events.FrameDone) {
 	cur := st.parsed.CurrentTime()
 	for _, pl := range st.parsed.GameState().Participants().Playing() {
 		pos := toPosition(pl.Position())
@@ -114,7 +114,7 @@ func (st *parseState) notVisible(eng *engagement, now time.Duration) {
 // onSighting drives engagement detection for the los metrics. an enemy entering
 // the view cone with clear los starts a sighting; the first hit closes it. the
 // cheap angle check gates the raycast so only a handful of rays fire per frame.
-func (st *parseState) onSighting(events.FrameDone) {
+func (st *parseState) onSighting(_ events.FrameDone) {
 	if !st.roundLive {
 		return
 	}

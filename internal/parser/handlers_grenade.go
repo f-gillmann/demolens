@@ -133,7 +133,7 @@ func (st *parseState) onInfernoStart(e events.InfernoStart) {
 // onInfernoPoll catches fire burn-out: flames go out well before InfernoExpired
 // (~20s later) and there's no burn-out event. Empty-map return keeps the no-fire
 // case at one check per frame.
-func (st *parseState) onInfernoPoll(events.FrameDone) {
+func (st *parseState) onInfernoPoll(_ events.FrameDone) {
 	if len(st.grenades.liveInfernos) == 0 {
 		return
 	}
