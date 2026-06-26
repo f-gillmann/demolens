@@ -42,7 +42,7 @@ func addUtility(dst *model.UtilityStats, src model.UtilityStats) {
 	dst.EnemiesFlashed += src.EnemiesFlashed
 	dst.TeammatesFlashed += src.TeammatesFlashed
 	dst.FlashesLeadingToKill += src.FlashesLeadingToKill
-	dst.EnemyBlindMicroseconds += src.EnemyBlindMicroseconds
+	dst.EnemyBlindMs += src.EnemyBlindMs
 	dst.HEDamage += src.HEDamage
 	dst.HETeamDamage += src.HETeamDamage
 	dst.MolotovDamage += src.MolotovDamage

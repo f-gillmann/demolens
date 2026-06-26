@@ -27,9 +27,9 @@ type liveInferno struct {
 // finalizeMatch runs the post-parse aggregation: match meta, duel matrix, and the
 // per-player counter-strafe/spotted/spray/TTD/crosshair stats.
 func (st *parseState) finalizeMatch() {
-	st.match.SchemaVersion = 5
+	st.match.SchemaVersion = 6
 	st.match.Meta.TickRate = st.parsed.TickRate()
-	st.match.Meta.DurationMicroseconds = st.parsed.CurrentTime().Microseconds()
+	st.match.Meta.DurationMs = st.parsed.CurrentTime().Milliseconds()
 	st.match.Meta.TotalRounds = len(st.match.Rounds)
 	st.match.Meta.ServerPlatform = demosource.GuessSource(st.match.Meta.ServerName)
 	st.match.Meta.DemoType = demosource.DemoType(st.match.Meta.IsHltv, st.match.Meta.ClientName)
@@ -41,7 +41,7 @@ func (st *parseState) finalizeMatch() {
 	// duel matrix: for each enemy killer/victim pair, kills, damage, per-weapon
 	// kills and average TTD. lives here rather than in metrics because it needs the
 	// TTD samples; the kill/damage half is duplicated in the rounds.
-	st.match.DuelMatrixTotal = buildDuelMatrix(st.match.Rounds, st.players, st.aim.ttdByVictim, st.cal)
+	st.match.Stats.DuelPairs = buildDuelMatrix(st.match.Rounds, st.players, st.aim.ttdByVictim, st.cal)
 
 	st.finalizeCounterStrafe()
 	st.finalizeSpottedAccuracy()
@@ -62,7 +62,11 @@ func (st *parseState) finalizeOutputMeta() {
 		MapMeshLoaded: st.vision.mesh != nil,
 	}
 	if st.opts.PlayerFrames {
-		st.match.Meta.Output.PositionsSampleHz = positionsSampleHz
+		st.match.Meta.Output.PositionsSampleHz = float64(time.Second) / float64(st.framePeriod)
+		st.match.Meta.Output.PositionsFields = model.PositionFields
+	}
+	if st.opts.GroundItems {
+		st.match.Meta.Output.GroundItemPositionsFields = model.GroundItemPositionFields
 	}
 }
 
@@ -116,7 +120,7 @@ func (st *parseState) finalizeSpottedAccuracy() {
 		if pl := st.players[id]; pl != nil && shots > 0 {
 			pl.SpottedShots = shots
 			pl.SpottedHits = st.aim.hitsOnEnemy[id]
-			pl.SpottedAccuracy = float64(st.aim.hitsOnEnemy[id]) / float64(shots) * 100
+			pl.Stats.SpottedAccuracy = float64(st.aim.hitsOnEnemy[id]) / float64(shots) * 100
 		}
 	}
 }
@@ -134,7 +138,7 @@ func (st *parseState) finalizeSprayStats() {
 
 	for id, shots := range st.aim.sprayShots {
 		if pl := st.players[id]; pl != nil && shots > 0 {
-			pl.SprayAccuracy = float64(st.aim.sprayHits[id]) / float64(shots) * 100
+			pl.Stats.SprayAccuracy = float64(st.aim.sprayHits[id]) / float64(shots) * 100
 		}
 	}
 
@@ -206,7 +210,7 @@ func (st *parseState) finalizeSprayDeviation() {
 func (st *parseState) finalizeTTD() {
 	for id, samples := range st.aim.ttdSamples {
 		if pl := st.players[id]; pl != nil && len(samples) > 0 {
-			pl.TimeToDamage = adaptiveTTD(samples, st.cal.TTDOutlierFactor, st.cal.TTDClampMs)
+			pl.Stats.TimeToDamage = adaptiveTTD(samples, st.cal.TTDOutlierFactor, st.cal.TTDClampMs)
 			pl.TimeToDamageSamples = len(samples)
 		}
 	}
@@ -218,7 +222,7 @@ func (st *parseState) finalizeCrosshair() {
 	for id, samples := range st.aim.crosshair {
 		if pl := st.players[id]; pl != nil && len(samples) > 0 {
 			sort.Float64s(samples)
-			pl.CrosshairPlacement = median(samples)
+			pl.Stats.CrosshairPlacement = median(samples)
 			pl.CrosshairSamples = len(samples)
 		}
 	}
@@ -236,10 +240,10 @@ func (st *parseState) finalizePlayers() {
 
 	// lifecycle log: append-ordered already, but stabilize by time then steam_id
 	// then type for determinism across runs.
-	sort.SliceStable(st.match.MatchLifecycle, func(i, j int) bool {
-		a, b := st.match.MatchLifecycle[i], st.match.MatchLifecycle[j]
-		if a.TimeMicroseconds != b.TimeMicroseconds {
-			return a.TimeMicroseconds < b.TimeMicroseconds
+	sort.SliceStable(st.match.Stats.MatchLifecycle, func(i, j int) bool {
+		a, b := st.match.Stats.MatchLifecycle[i], st.match.Stats.MatchLifecycle[j]
+		if a.TMs != b.TMs {
+			return a.TMs < b.TMs
 		}
 		if a.SteamID != b.SteamID {
 			return a.SteamID < b.SteamID
@@ -271,10 +275,10 @@ func buildDuelMatrix(rounds []model.Round, players map[uint64]*model.Player, ttd
 
 	for _, r := range rounds {
 		for _, k := range r.Kills {
-			if k.Killer == 0 || k.Victim == 0 || !enemies(k.Killer, k.Victim) {
+			if k.KillerID() == 0 || k.Victim == 0 || !enemies(k.KillerID(), k.Victim) {
 				continue
 			}
-			pair := get([2]uint64{k.Killer, k.Victim})
+			pair := get([2]uint64{k.KillerID(), k.Victim})
 			pair.kills++
 			if k.Weapon != "" {
 				pair.weapons[k.Weapon]++
@@ -332,13 +336,13 @@ func finalizeRoundPlayers(roster map[uint64]*model.RoundPlayer) []model.RoundPla
 func newestFireGrenade(grenades map[int64]*parseGrenade, throwerID uint64) *parseGrenade {
 	var best *parseGrenade
 	for _, g := range grenades {
-		if g.thrower != throwerID || g.detonateTimeMicroseconds != 0 {
+		if g.thrower != throwerID || g.detonateT != 0 {
 			continue
 		}
 		if g.gtype != "molotov" && g.gtype != "incendiary" {
 			continue
 		}
-		if best == nil || g.throwTimeMicroseconds > best.throwTimeMicroseconds {
+		if best == nil || g.throwT > best.throwT {
 			best = g
 		}
 	}
@@ -360,7 +364,7 @@ func newestDetonatedFireGrenade(grenades map[int64]*parseGrenade, throwerID uint
 		if g.gtype != "molotov" && g.gtype != "incendiary" {
 			continue
 		}
-		if best == nil || g.detonateTimeMicroseconds > best.detonateTimeMicroseconds {
+		if best == nil || g.detonateT > best.detonateT {
 			best = g
 		}
 	}
@@ -406,19 +410,19 @@ func finalizeGrenades(grenades map[int64]*parseGrenade) model.Grenades {
 	}
 
 	sort.Slice(out.Flashes, func(i, j int) bool {
-		return grenadeLess(out.Flashes[i].ThrowTimeMicroseconds, out.Flashes[j].ThrowTimeMicroseconds, out.Flashes[i].Thrower, out.Flashes[j].Thrower)
+		return grenadeLess(out.Flashes[i].ThrowMs, out.Flashes[j].ThrowMs, out.Flashes[i].Thrower, out.Flashes[j].Thrower)
 	})
 	sort.Slice(out.HEs, func(i, j int) bool {
-		return grenadeLess(out.HEs[i].ThrowTimeMicroseconds, out.HEs[j].ThrowTimeMicroseconds, out.HEs[i].Thrower, out.HEs[j].Thrower)
+		return grenadeLess(out.HEs[i].ThrowMs, out.HEs[j].ThrowMs, out.HEs[i].Thrower, out.HEs[j].Thrower)
 	})
 	sort.Slice(out.Molotovs, func(i, j int) bool {
-		return grenadeLess(out.Molotovs[i].ThrowTimeMicroseconds, out.Molotovs[j].ThrowTimeMicroseconds, out.Molotovs[i].Thrower, out.Molotovs[j].Thrower)
+		return grenadeLess(out.Molotovs[i].ThrowMs, out.Molotovs[j].ThrowMs, out.Molotovs[i].Thrower, out.Molotovs[j].Thrower)
 	})
 	sort.Slice(out.Smokes, func(i, j int) bool {
-		return grenadeLess(out.Smokes[i].ThrowTimeMicroseconds, out.Smokes[j].ThrowTimeMicroseconds, out.Smokes[i].Thrower, out.Smokes[j].Thrower)
+		return grenadeLess(out.Smokes[i].ThrowMs, out.Smokes[j].ThrowMs, out.Smokes[i].Thrower, out.Smokes[j].Thrower)
 	})
 	sort.Slice(out.Decoys, func(i, j int) bool {
-		return grenadeLess(out.Decoys[i].ThrowTimeMicroseconds, out.Decoys[j].ThrowTimeMicroseconds, out.Decoys[i].Thrower, out.Decoys[j].Thrower)
+		return grenadeLess(out.Decoys[i].ThrowMs, out.Decoys[j].ThrowMs, out.Decoys[i].Thrower, out.Decoys[j].Thrower)
 	})
 	return out
 }
@@ -456,18 +460,18 @@ func grenadeLess(aTime, bTime int64, aThrower, bThrower uint64) bool {
 func (g *parseGrenade) toFlash() model.GrenadeFlash {
 	sortFlashed(g.flashed)
 	return model.GrenadeFlash{
-		GrenadeID:                g.grenadeID,
-		Thrower:                  g.thrower,
-		Side:                     g.side,
-		Type:                     "flash",
-		ThrowTimeMicroseconds:    g.throwTimeMicroseconds,
-		DetonateTimeMicroseconds: g.detonateTimeMicroseconds,
-		FlightMicroseconds:       g.flightMicroseconds,
-		ThrowPosition:            g.throwPosition,
-		DetonatePosition:         g.detonatePosition,
-		EnemiesFlashed:           g.enemiesFlashed,
-		TeammatesFlashed:         g.teammatesFlashed,
-		Flashed:                  g.flashed,
+		GrenadeID:        g.grenadeID,
+		Thrower:          g.thrower,
+		Side:             g.side,
+		Type:             "flash",
+		ThrowMs:          g.throwT,
+		DetonateMs:       g.detonateT,
+		FlightMs:         g.flightMs,
+		ThrowPosition:    g.throwPosition,
+		DetonatePosition: g.detonatePosition,
+		EnemiesFlashed:   g.enemiesFlashed,
+		TeammatesFlashed: g.teammatesFlashed,
+		Flashed:          g.flashed,
 	}
 }
 
@@ -475,18 +479,18 @@ func (g *parseGrenade) toFlash() model.GrenadeFlash {
 func (g *parseGrenade) toHE() model.GrenadeHE {
 	sortVictims(g.victims)
 	return model.GrenadeHE{
-		GrenadeID:                g.grenadeID,
-		Thrower:                  g.thrower,
-		Side:                     g.side,
-		Type:                     "he",
-		ThrowTimeMicroseconds:    g.throwTimeMicroseconds,
-		DetonateTimeMicroseconds: g.detonateTimeMicroseconds,
-		FlightMicroseconds:       g.flightMicroseconds,
-		ThrowPosition:            g.throwPosition,
-		DetonatePosition:         g.detonatePosition,
-		DamageDealt:              g.damageDealt,
-		TeamDamage:               g.teamDamage,
-		Victims:                  g.victims,
+		GrenadeID:        g.grenadeID,
+		Thrower:          g.thrower,
+		Side:             g.side,
+		Type:             "he",
+		ThrowMs:          g.throwT,
+		DetonateMs:       g.detonateT,
+		FlightMs:         g.flightMs,
+		ThrowPosition:    g.throwPosition,
+		DetonatePosition: g.detonatePosition,
+		DamageDealt:      g.damageDealt,
+		TeamDamage:       g.teamDamage,
+		Victims:          g.victims,
 	}
 }
 
@@ -495,35 +499,35 @@ func (g *parseGrenade) toHE() model.GrenadeHE {
 func (g *parseGrenade) toMolotov() model.GrenadeMolotov {
 	sortVictims(g.victims)
 	return model.GrenadeMolotov{
-		GrenadeID:                g.grenadeID,
-		Thrower:                  g.thrower,
-		Side:                     g.side,
-		Type:                     g.gtype,
-		ThrowTimeMicroseconds:    g.throwTimeMicroseconds,
-		DetonateTimeMicroseconds: g.detonateTimeMicroseconds,
-		ExpireTimeMicroseconds:   g.expireTimeMicroseconds,
-		FlightMicroseconds:       g.flightMicroseconds,
-		ThrowPosition:            g.throwPosition,
-		DetonatePosition:         g.detonatePosition,
-		DamageDealt:              g.damageDealt,
-		TeamDamage:               g.teamDamage,
-		Victims:                  g.victims,
-		FireCells:                g.fireCells,
+		GrenadeID:        g.grenadeID,
+		Thrower:          g.thrower,
+		Side:             g.side,
+		Type:             g.gtype,
+		ThrowMs:          g.throwT,
+		DetonateMs:       g.detonateT,
+		ExpireMs:         g.expireT,
+		FlightMs:         g.flightMs,
+		ThrowPosition:    g.throwPosition,
+		DetonatePosition: g.detonatePosition,
+		DamageDealt:      g.damageDealt,
+		TeamDamage:       g.teamDamage,
+		Victims:          g.victims,
+		FireCells:        g.fireCells,
 	}
 }
 
 // toBasic projects the working grenade onto the typed smoke/decoy bucket entry.
 func (g *parseGrenade) toBasic() model.GrenadeBasic {
 	return model.GrenadeBasic{
-		GrenadeID:                g.grenadeID,
-		Thrower:                  g.thrower,
-		Side:                     g.side,
-		Type:                     g.gtype,
-		ThrowTimeMicroseconds:    g.throwTimeMicroseconds,
-		DetonateTimeMicroseconds: g.detonateTimeMicroseconds,
-		ExpireTimeMicroseconds:   g.expireTimeMicroseconds,
-		FlightMicroseconds:       g.flightMicroseconds,
-		ThrowPosition:            g.throwPosition,
-		DetonatePosition:         g.detonatePosition,
+		GrenadeID:        g.grenadeID,
+		Thrower:          g.thrower,
+		Side:             g.side,
+		Type:             g.gtype,
+		ThrowMs:          g.throwT,
+		DetonateMs:       g.detonateT,
+		ExpireMs:         g.expireT,
+		FlightMs:         g.flightMs,
+		ThrowPosition:    g.throwPosition,
+		DetonatePosition: g.detonatePosition,
 	}
 }

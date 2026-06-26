@@ -25,8 +25,8 @@ func enrichKills(m *model.Match) {
 		}
 		colCount := map[colKey]int{}
 		for _, k := range r.Kills {
-			if k.Killer != 0 {
-				colCount[colKey{k.Killer, k.TimeMicroseconds}]++
+			if k.KillerID() != 0 {
+				colCount[colKey{k.KillerID(), k.TMs}]++
 			}
 		}
 
@@ -35,12 +35,12 @@ func enrichKills(m *model.Match) {
 
 			k.Opening = ki == 0
 
-			if k.Killer != 0 && colCount[colKey{k.Killer, k.TimeMicroseconds}] >= 2 {
+			if k.KillerID() != 0 && colCount[colKey{k.KillerID(), k.TMs}] >= 2 {
 				k.Collateral = true
 			}
 
 			if k.KillerSide == "" {
-				k.KillerSide = side[k.Killer]
+				k.KillerSide = side[k.KillerID()]
 			}
 			if k.VictimSide == "" {
 				k.VictimSide = side[k.Victim]

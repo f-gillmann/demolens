@@ -8,7 +8,19 @@ import (
 	"github.com/golang/geo/r3"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/sendtables"
 )
+
+// kitStint is one open defuse-kit ground stint: the live world entity plus the
+// ground-item record built from it. The kit ships as a generic CBaseAnimGraph
+// prop that never networks an owner, so a pickup is paired from a CT's defuse-kit
+// flag gaining next to the entity (see pollKits), not from an owner handle.
+type kitStint struct {
+	ent     sendtables.Entity
+	dw      *model.DroppedItem
+	lastPos model.Position // last sampled ground position, for pickup proximity
+	gone    bool           // entity destroyed: stop sampling, keep until pickup/flush
+}
 
 // pendingFlash is who fully blinded a player, so we can credit the flasher if the
 // victim dies blind.
@@ -56,13 +68,13 @@ type parseGrenade struct {
 	side      string
 	gtype     string // flash / smoke / he / molotov / incendiary / decoy
 
-	throwTimeMicroseconds    int64
-	detonateTimeMicroseconds int64
-	expireTimeMicroseconds   int64
-	flightMicroseconds       int64
-	throwPosition            model.Position
-	detonatePosition         model.Position
-	detonated                bool // detonate seen, so we don't overwrite
+	throwT           int64 // ms, since round start
+	detonateT        int64 // ms
+	expireT          int64 // ms
+	flightMs         int64 // ms
+	throwPosition    model.Position
+	detonatePosition model.Position
+	detonated        bool // detonate seen, so we don't overwrite
 
 	// flash outcomes (flashbangs only)
 	enemiesFlashed   int
@@ -113,7 +125,9 @@ type parseState struct {
 	match   *model.Match
 	players map[uint64]*model.Player
 
+	framePeriod    time.Duration // positions-stream sample interval, from Options.PositionsHz
 	roundStart     time.Duration
+	freezeStart    time.Duration // most recent (non-warmup) RoundStart, for the round_start_t marker
 	roundEndTime   time.Duration // when the round ended, for the exit-window duration
 	pending        *model.Round
 	pendingPlayers map[uint64]*model.RoundPlayer
@@ -124,10 +138,16 @@ type parseState struct {
 	prerollBuf []bufferedFrame // freezetime frames awaiting rebase onto the next round at go-live
 
 	// per-round accumulators, reset at freezetime end.
-	shotStats    map[uint64]map[string]*shotStatAcc // per (shooter, weapon) shots/spotted for round.shot_stats
-	lastInvHash  map[uint64]string                  // last inventory fingerprint per player, to skip unchanged snapshots
-	firstContact bool                               // latched at the round's first kill/damage, for first_contact snapshots
-	droppedOpen  map[int]*model.DroppedWeapon       // open gun-on-ground stints keyed by weapon entity id, closed on pickup / flushed at round end
+	shotStats        map[uint64]map[string]*shotStatAcc // per (shooter, weapon) shots/spotted for round.shot_stats
+	lastInvHash      map[uint64]string                  // last inventory fingerprint per player, to skip unchanged snapshots
+	firstContact     bool                               // latched at the round's first kill/damage, for first_contact snapshots
+	groundItemsOpen  map[int]*model.DroppedItem         // open gun-on-ground stints keyed by weapon entity id, closed on pickup / flushed at round end
+	groundItemSerial map[int]int                        // entity serial per open stint, to detect slot reuse (Source 2 reuses entity ids) so a track doesn't teleport across two weapons
+	kitOpen          map[int]*kitStint                  // open defuse-kit ground stints keyed by kit entity id, closed on pickup / flushed at round end
+	kitHad           map[uint64]bool                    // last-frame defuse-kit flag per player, to detect a pickup's flag gain
+	kitModel         uint64                             // locked CBaseAnimGraph model handle of the dropped kit; later props with another model are ignored
+	kitModelSet      bool
+	deathTimes       map[uint64]int64 // victim steam_id -> death time (roundMs); resolves ground-item on_death by drop-to-death proximity, since the weapon un-owns ~1 tick before the death event fires
 
 	// A starts CT, B starts T. Flipped on every side switch so a player's A/B
 	// identity stays put when the sides swap.
@@ -190,26 +210,32 @@ type economyState struct {
 // frameState holds the per-frame position sampling used to derive speed, since
 // CS2 doesn't network velocity.
 type frameState struct {
-	lastFrameSample  time.Duration
-	lastPos          map[uint64]model.Position
-	lastPosTime      map[uint64]time.Duration
-	playerSpeed      map[uint64]float64
-	playerVelocity   map[uint64]model.Position // per-frame velocity vector, same delta source as playerSpeed
-	lastActiveWeapon map[uint64]string         // last non-empty active weapon per player, for the active_weapon fallback
+	lastFrameSample      time.Duration
+	lastGroundItemSample time.Duration // ground-item position-track sample cursor, same framePeriod cadence as lastFrameSample
+	lastPos              map[uint64]model.Position
+	lastPosTime          map[uint64]time.Duration
+	playerSpeed          map[uint64]float64
+	playerVelocity       map[uint64]model.Position // per-frame velocity vector, same delta source as playerSpeed
+	lastActiveWeapon     map[uint64]string         // last non-empty active weapon per player, for the active_weapon fallback
 }
 
 // newParseState builds the empty per-run state with every accumulator map ready.
 func newParseState(parsed dem.Parser, opts Options, match *model.Match) *parseState {
 	return &parseState{
-		parsed:      parsed,
-		opts:        opts,
-		cal:         opts.Calibration.withDefaults(),
-		match:       match,
-		players:     map[uint64]*model.Player{},
-		dmgToVictim: map[uint64]int{},
-		shotStats:   map[uint64]map[string]*shotStatAcc{},
-		lastInvHash: map[uint64]string{},
-		droppedOpen: map[int]*model.DroppedWeapon{},
+		parsed:           parsed,
+		opts:             opts,
+		cal:              opts.Calibration.withDefaults(),
+		framePeriod:      framePeriod(opts.PositionsHz),
+		match:            match,
+		players:          map[uint64]*model.Player{},
+		dmgToVictim:      map[uint64]int{},
+		shotStats:        map[uint64]map[string]*shotStatAcc{},
+		lastInvHash:      map[uint64]string{},
+		groundItemsOpen:  map[int]*model.DroppedItem{},
+		groundItemSerial: map[int]int{},
+		kitOpen:          map[int]*kitStint{},
+		kitHad:           map[uint64]bool{},
+		deathTimes:       map[uint64]int64{},
 		sideToTeam: map[common.Team]string{
 			common.TeamCounterTerrorists: "A",
 			common.TeamTerrorists:        "B",
@@ -265,7 +291,7 @@ func (st *parseState) ensureStreams() *model.RoundStreams {
 	return st.pending.Streams
 }
 
-// roundMicros is the microseconds elapsed since round start (freeze-end).
-func (st *parseState) roundMicros() int64 {
-	return (st.parsed.CurrentTime() - st.roundStart).Microseconds()
+// roundMs is the milliseconds elapsed since round start (freeze-end / go-live).
+func (st *parseState) roundMs() int64 {
+	return (st.parsed.CurrentTime() - st.roundStart).Milliseconds()
 }

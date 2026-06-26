@@ -4,10 +4,10 @@ import "encoding/json"
 
 // FlashPair holds how often and how long a flasher blinded one victim.
 type FlashPair struct {
-	Flasher           uint64 `json:"flasher,string"`
-	Flashed           uint64 `json:"flashed,string"`
-	Count             int    `json:"count"`
-	BlindMicroseconds int64  `json:"blind_microseconds"`
+	Flasher uint64 `json:"flasher,string"`
+	Flashed uint64 `json:"flashed,string"`
+	Count   int    `json:"count"`
+	BlindMs int64  `json:"blind_ms"` // total blind time on this victim, ms
 }
 
 // MultiKills counts rounds in which a player got exactly n kills.

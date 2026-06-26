@@ -76,7 +76,8 @@ func analyzeCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&opts.Shots, "shots", "s", false, "override the 'shots' stream (per-shot shooter geometry, large output)")
 	cmd.Flags().BoolVarP(&opts.GrenadePaths, "grenade-paths", "g", false, "override the 'grenade_paths' stream (grenade trajectories + bounces, large output)")
 	cmd.Flags().BoolVar(&opts.Inventory, "inventory", false, "override the 'inventory' stream (mid-round inventory change log)")
-	cmd.Flags().BoolVar(&opts.DroppedWeapons, "dropped-weapons", false, "override the 'dropped_weapons' stream (ground-weapon intervals: dropped guns + when picked up)")
+	cmd.Flags().BoolVar(&opts.GroundItems, "ground-items", false, "override the 'ground_items' stream (ground-weapon intervals: dropped guns + when picked up)")
+	cmd.Flags().Float64Var(&opts.PositionsHz, "positions-hz", 4, "positions stream sample rate in Hz")
 	calibration := &opts.Calibration
 	cmd.Flags().StringVar(&opts.MapsDir, "maps-dir", "tris", "dir of .tri map meshes for time-to-damage line of sight")
 	cmd.Flags().Float64Var(&calibration.CrosshairConeDeg, "crosshair-cone", calibration.CrosshairConeDeg, "crosshair appearance cone (deg)")
@@ -108,7 +109,7 @@ func resolveStreams(cmd *cobra.Command, opts *demolens.Options) {
 		{"shots", &opts.Shots},
 		{"grenade-paths", &opts.GrenadePaths},
 		{"inventory", &opts.Inventory},
-		{"dropped-weapons", &opts.DroppedWeapons},
+		{"ground-items", &opts.GroundItems},
 	}
 
 	// snapshot the explicit values before ResolveTier stomps every bool.

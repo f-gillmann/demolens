@@ -1,8 +1,24 @@
 package parser
 
 import (
+	"github.com/golang/geo/r3"
 	st "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/sendtables"
 )
+
+// safePosition reads a raw entity's world position, guarding the CS2 ColorOrErr-
+// style panic some entity types throw from Position(). Returns false when the
+// position is unreadable (entity gone or never positioned).
+func safePosition(e st.Entity) (v r3.Vector, ok bool) {
+	if e == nil {
+		return r3.Vector{}, false
+	}
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	return e.Position(), true
+}
 
 // Defensive raw prop readers. demoinfocs v5 stores props as untyped any and the
 // concrete numeric type drifts across versions, where strict accessors would panic.

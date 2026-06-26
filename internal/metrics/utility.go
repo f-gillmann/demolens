@@ -8,7 +8,7 @@ func computeUtilityAverages(p *model.Player) {
 	a := &p.UtilityAverages
 
 	if u.EnemiesFlashed > 0 {
-		a.BlindMicroseconds = float64(u.EnemyBlindMicroseconds) / float64(u.EnemiesFlashed)
+		a.BlindMs = float64(u.EnemyBlindMs) / float64(u.EnemiesFlashed)
 	}
 
 	if u.HEsThrown > 0 {

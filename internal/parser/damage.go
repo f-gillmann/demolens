@@ -14,10 +14,10 @@ import (
 // world positions only attach when that heavy stream is on.
 func damageEvent(e events.PlayerHurt, into time.Duration, healthDamage int, withPositions bool) model.Damage {
 	d := model.Damage{
-		TimeMicroseconds: into.Microseconds(),
-		HealthDamage:     healthDamage,
-		ArmorDamage:      e.ArmorDamageTaken,
-		HitGroup:         hitGroupString(e.HitGroup),
+		TMs:          into.Milliseconds(),
+		HealthDamage: healthDamage,
+		ArmorDamage:  e.ArmorDamageTaken,
+		HitGroup:     hitGroupString(e.HitGroup),
 	}
 
 	if e.Attacker != nil {

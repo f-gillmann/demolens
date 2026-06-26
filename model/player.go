@@ -1,5 +1,28 @@
 package model
 
+// PlayerStats is the per-player nested derived block (players[].stats): the ratios,
+// ratings and percentages computed FROM the player's raw counts. Kept separate from
+// those counts so the two can't silently disagree. NOTE: this is a different scope
+// from the root-level Stats (match aggregates); same key name, by design.
+type PlayerStats struct {
+	KD           float64 `json:"kd"`
+	ADR          float64 `json:"adr"`
+	KPR          float64 `json:"kpr"`
+	DPR          float64 `json:"dpr"`
+	APR          float64 `json:"apr"`
+	KAST         float64 `json:"kast_pct"`
+	HSPercent    float64 `json:"hs_pct"`            // headshot kills / kills
+	Accuracy     float64 `json:"accuracy_pct"`      // hits / shots fired
+	HeadAccuracy float64 `json:"head_accuracy_pct"` // head hits / hits, AWP excluded
+	// mesh-gated (line of sight): dropped when no map mesh is loaded.
+	SpottedAccuracy    float64 `json:"spotted_accuracy_pct,omitempty"` // hits / shots, enemy in view
+	SprayAccuracy      float64 `json:"spray_accuracy_pct,omitempty"`   // share of spray bullets that hit
+	TimeToDamage       float64 `json:"time_to_damage_ms,omitempty"`    // avg ms, seeing an enemy to first damage
+	CrosshairPlacement float64 `json:"crosshair_placement"`            // median deg moved from sighting to hit
+	Rating1            float64 `json:"hltv_rating_1"`
+	Rating2            float64 `json:"hltv_rating_2"` // 2.0, approximate
+}
+
 type Player struct {
 	SteamID  uint64 `json:"steam_id,string"`
 	Name     string `json:"name"`
@@ -20,33 +43,22 @@ type Player struct {
 	ExitKills    int `json:"exit_kills"` // after the round was decided, kept out of K/D
 	ExitDeaths   int `json:"exit_deaths"`
 
-	// Computed metrics
-	KD           float64 `json:"kd"`
-	ADR          float64 `json:"adr"`
-	KPR          float64 `json:"kpr"`
-	DPR          float64 `json:"dpr"`
-	APR          float64 `json:"apr"`
-	KAST         float64 `json:"kast_pct"`
-	HSPercent    float64 `json:"hs_pct"`            // headshot kills / kills
-	Accuracy     float64 `json:"accuracy_pct"`      // hits / shots fired
-	HeadAccuracy float64 `json:"head_accuracy_pct"` // head hits / hits, AWP excluded
-	// The omitempty fields below need a map mesh for line of sight and are dropped when none is loaded.
-	SpottedAccuracy          float64 `json:"spotted_accuracy_pct,omitempty"`   // hits / shots, enemy in view
-	SpottedShots             int     `json:"spotted_shots,omitempty"`          // denominator of the above
-	SpottedHits              int     `json:"spotted_hits,omitempty"`           // numerator
-	SprayAccuracy            float64 `json:"spray_accuracy_pct,omitempty"`     // share of spray bullets that hit
-	TimeToDamage             float64 `json:"time_to_damage_ms,omitempty"`      // avg ms, seeing an enemy to first damage
-	TimeToDamageSamples      int     `json:"time_to_damage_samples,omitempty"` // engagements measured. low means noisy
-	CrosshairPlacement       float64 `json:"crosshair_placement"`              // median deg moved from sighting to hit
-	CrosshairSamples         int     `json:"crosshair_samples"`                // low means noisy
-	TradeKillOpportunities   int     `json:"trade_kill_opportunities"`
-	TradeKillAttempts        int     `json:"trade_kill_attempts"`
-	TradeKills               int     `json:"trade_kills"`
-	TradedDeathOpportunities int     `json:"traded_death_opportunities"`
-	TradedDeathAttempts      int     `json:"traded_death_attempts"`
-	TradedDeaths             int     `json:"traded_deaths"`
-	Rating1                  float64 `json:"hltv_rating_1"`
-	Rating2                  float64 `json:"hltv_rating_2"` // 2.0, approximate
+	// Derived ratios / ratings / percentages, nested so they can't be confused with
+	// the raw counts above. See PlayerStats.
+	Stats PlayerStats `json:"stats"`
+
+	// Raw counts that feed the derived stats (kept top-level, directly tallied).
+	// The omitempty fields below need a map mesh for line of sight and drop when none is loaded.
+	SpottedShots             int `json:"spotted_shots,omitempty"`          // spotted-accuracy denominator
+	SpottedHits              int `json:"spotted_hits,omitempty"`           // spotted-accuracy numerator
+	TimeToDamageSamples      int `json:"time_to_damage_samples,omitempty"` // engagements measured. low means noisy
+	CrosshairSamples         int `json:"crosshair_samples"`                // low means noisy
+	TradeKillOpportunities   int `json:"trade_kill_opportunities"`
+	TradeKillAttempts        int `json:"trade_kill_attempts"`
+	TradeKills               int `json:"trade_kills"`
+	TradedDeathOpportunities int `json:"traded_death_opportunities"`
+	TradedDeathAttempts      int `json:"traded_death_attempts"`
+	TradedDeaths             int `json:"traded_deaths"`
 
 	NoScopeKills    int `json:"no_scope_kills"`
 	WallbangKills   int `json:"wallbang_kills"`

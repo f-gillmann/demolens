@@ -111,6 +111,14 @@ func (st *parseState) onKill(kill events.Kill) {
 		return
 	}
 
+	// record the victim's death time so a ground stint that opens ~1 tick before
+	// this event (the weapon un-owns before IsAlive flips) can resolve on_death by
+	// drop-to-death proximity. covers exit-window deaths too, since the ground poll
+	// keeps running through the post-round.
+	if kill.Victim != nil && kill.Victim.SteamID64 != 0 {
+		st.deathTimes[kill.Victim.SteamID64] = st.roundMs()
+	}
+
 	// exit kills (round already over) get their own bucket. they never touch
 	// K/D and stay out of the kill timeline that clutch/opening/trade reads.
 	if !st.roundLive {
@@ -124,13 +132,15 @@ func (st *parseState) onKill(kill events.Kill) {
 
 	rk := roundKill(kill, st.parsed.CurrentTime()-st.roundStart)
 	rk.AlivePlayers = aliveSnapshot(st.parsed.GameState())
-	if kill.Killer != nil {
+	// killer speed/scope ride only on a real player kill; non-player kinds (bomb/
+	// world/suicide) leave them zero so the omitempty sentinels drop.
+	if rk.Kind == "player" && kill.Killer != nil {
 		rk.KillerSpeed = st.frames.playerSpeed[kill.Killer.SteamID64]
 		rk.KillerSpeedRatio = csdata.SpeedRatio(rk.KillerSpeed, kill.Weapon)
 		rk.KillerScoped = kill.Killer.IsScoped()
 	}
 	rk.PickedUp = killWeaponPickedUp(kill)
-	rk.KillerSide = st.roundSide(rk.Killer)
+	rk.KillerSide = st.roundSide(rk.KillerID())
 	rk.VictimSide = st.roundSide(rk.Victim)
 	st.markFirstContact()
 	st.pending.Kills = append(st.pending.Kills, rk)
@@ -436,13 +446,13 @@ func (st *parseState) onWeaponFire(fire events.WeaponFire) {
 	if st.opts.Shots && (st.roundLive || st.framePhase == phasePost) {
 		if streams := st.ensureStreams(); streams != nil {
 			streams.Shots = append(streams.Shots, model.Shot{
-				TimeMicroseconds: st.roundMicros(),
-				Shooter:          fire.Shooter.SteamID64,
-				Weapon:           fire.Weapon.String(),
-				Position:         toPosition(fire.Shooter.Position()),
-				Yaw:              round2(float64(fire.Shooter.ViewDirectionX())),
-				Pitch:            round2(float64(fire.Shooter.ViewDirectionY())),
-				RecoilIndex:      float64(fire.Weapon.RecoilIndex()),
+				TMs:         st.roundMs(),
+				Shooter:     fire.Shooter.SteamID64,
+				Weapon:      fire.Weapon.String(),
+				Position:    toPosition(fire.Shooter.Position()),
+				Yaw:         round2(float64(fire.Shooter.ViewDirectionX())),
+				Pitch:       round2(float64(fire.Shooter.ViewDirectionY())),
+				RecoilIndex: float64(fire.Weapon.RecoilIndex()),
 			})
 		}
 	}
@@ -541,11 +551,11 @@ func (st *parseState) onItemPickup(e events.ItemPickup) {
 
 	st.track(e.Player.SteamID64, e.Player.Name)
 	st.pending.Pickups = append(st.pending.Pickups, model.WeaponPickup{
-		SteamID:          e.Player.SteamID64,
-		Weapon:           e.Weapon.String(),
-		OriginalOwner:    orig,
-		FromEnemy:        fromEnemy,
-		TimeMicroseconds: st.roundMicros(),
+		SteamID:       e.Player.SteamID64,
+		Weapon:        e.Weapon.String(),
+		OriginalOwner: orig,
+		FromEnemy:     fromEnemy,
+		TMs:           st.roundMs(),
 	})
 }
 

@@ -29,26 +29,26 @@ func (st *parseState) grenadeByEntity(entityID int) *parseGrenade {
 // detonate marks when a grenade lands, pops or explodes.
 func (st *parseState) detonate(entityID int, pos model.Position, instant bool) {
 	g := st.grenadeByEntity(entityID)
-	if g == nil || g.detonateTimeMicroseconds != 0 {
+	if g == nil || g.detonateT != 0 {
 		return
 	}
-	t := st.roundMicros()
-	g.detonateTimeMicroseconds = t
+	t := st.roundMs()
+	g.detonateT = t
 	g.detonatePosition = pos
-	g.flightMicroseconds = t - g.throwTimeMicroseconds
+	g.flightMs = t - g.throwT
 	g.detonated = true
 	if instant { // flash/he detonate and expire at the same instant
-		g.expireTimeMicroseconds = t
+		g.expireT = t
 	}
 }
 
 // expire marks when a timed grenade (smoke/fire/decoy) fades out.
 func (st *parseState) expire(entityID int) {
 	g := st.grenadeByEntity(entityID)
-	if g == nil || g.expireTimeMicroseconds != 0 {
+	if g == nil || g.expireT != 0 {
 		return
 	}
-	g.expireTimeMicroseconds = st.roundMicros()
+	g.expireT = st.roundMs()
 }
 
 func (st *parseState) grenadeEventPos(e events.GrenadeEvent) model.Position {
@@ -84,16 +84,16 @@ func (st *parseState) onGrenadeThrow(thrown events.GrenadeProjectileThrow) {
 	roundPlayer.Utility.UsedUtilityValue += csdata.UtilityPrice[nade.Type]
 
 	if st.grenades.pendingGrenades != nil {
-		throwTime := st.roundMicros()
+		throwTime := st.roundMs()
 		st.grenades.grenadeSeq++
 		gtype := grenadeTypeString(nade.Type)
 		st.grenades.pendingGrenades[thrown.Projectile.UniqueID()] = &parseGrenade{
-			grenadeID:             grenadeID(gtype, st.grenades.grenadeSeq),
-			thrower:               thrower.SteamID64,
-			side:                  roundPlayer.Side,
-			gtype:                 gtype,
-			throwTimeMicroseconds: throwTime,
-			throwPosition:         grenadePosition(thrown.Projectile),
+			grenadeID:     grenadeID(gtype, st.grenades.grenadeSeq),
+			thrower:       thrower.SteamID64,
+			side:          roundPlayer.Side,
+			gtype:         gtype,
+			throwT:        throwTime,
+			throwPosition: grenadePosition(thrown.Projectile),
 		}
 		if e := thrown.Projectile.Entity; e != nil {
 			st.grenades.entityToUnique[e.ID()] = thrown.Projectile.UniqueID()
@@ -123,9 +123,9 @@ func (st *parseState) onInfernoStart(e events.InfernoStart) {
 	if g == nil {
 		return
 	}
-	g.detonateTimeMicroseconds = st.roundMicros()
+	g.detonateT = st.roundMs()
 	g.detonatePosition = toPosition(e.Inferno.Entity.Position())
-	g.flightMicroseconds = g.detonateTimeMicroseconds - g.throwTimeMicroseconds
+	g.flightMs = g.detonateT - g.throwT
 	g.detonated = true
 	st.grenades.liveInfernos[e.Inferno.UniqueID()] = &liveInferno{inferno: e.Inferno, grenade: g}
 }
@@ -149,7 +149,7 @@ func (st *parseState) onInfernoPoll(_ events.FrameDone) {
 			continue
 		}
 		if li.hadFire { // was burning, now all out (burned out or smoked off)
-			li.grenade.expireTimeMicroseconds = (cur - st.roundStart).Microseconds()
+			li.grenade.expireT = (cur - st.roundStart).Milliseconds()
 			delete(st.grenades.liveInfernos, uid)
 		}
 	}
@@ -178,8 +178,8 @@ func (st *parseState) onInfernoExpired(e events.InfernoExpired) {
 	}
 	uid := e.Inferno.UniqueID()
 	if li := st.grenades.liveInfernos[uid]; li != nil {
-		if li.grenade.expireTimeMicroseconds == 0 {
-			li.grenade.expireTimeMicroseconds = st.roundMicros()
+		if li.grenade.expireT == 0 {
+			li.grenade.expireT = st.roundMs()
 		}
 		delete(st.grenades.liveInfernos, uid)
 	}
@@ -204,16 +204,16 @@ func (st *parseState) onPlayerFlashed(flash events.PlayerFlashed) {
 
 	self := flash.Attacker.SteamID64 == flash.Player.SteamID64
 	sameTeam := self || flash.Player.Team == flash.Attacker.Team
-	blind := int64(float64(flash.FlashDuration().Microseconds()) * st.cal.FlashBlindScale)
+	blind := int64(float64(flash.FlashDuration().Milliseconds()) * st.cal.FlashBlindScale)
 
 	// only "fully flashed" players count, i.e. blinded >= 1.1s. friendlies here
 	// means the thrower's own team plus themselves.
-	if blind >= flashFullyBlind.Microseconds() {
+	if blind >= flashFullyBlind.Milliseconds() {
 		if sameTeam {
 			roundPlayer.Utility.TeammatesFlashed++
 		} else {
 			roundPlayer.Utility.EnemiesFlashed++
-			roundPlayer.Utility.EnemyBlindMicroseconds += blind
+			roundPlayer.Utility.EnemyBlindMs += blind
 			// arm the flash-to-kill credit in case this enemy dies still blind
 			st.grenades.flashLead[flash.Player.SteamID64] = pendingFlash{
 				flasher: flash.Attacker.SteamID64,
@@ -227,7 +227,7 @@ func (st *parseState) onPlayerFlashed(flash events.PlayerFlashed) {
 	// and the flash matrix. self-flashes don't belong in who-blinded-whom.
 	if !self && flash.Projectile != nil && st.grenades.pendingGrenades != nil {
 		if g := st.grenades.pendingGrenades[flash.Projectile.UniqueID()]; g != nil {
-			fp := model.FlashedPlayer{SteamID: flash.Player.SteamID64, BlindMicroseconds: blind}
+			fp := model.FlashedPlayer{SteamID: flash.Player.SteamID64, BlindMs: blind}
 			if vrp := st.pendingPlayers[flash.Player.SteamID64]; vrp != nil {
 				fp.Side = vrp.Side
 			}
@@ -256,18 +256,18 @@ func (st *parseState) attributeHEDamage(attacker, victim uint64, victimSide stri
 	if st.grenades.pendingGrenades == nil || dmg <= 0 {
 		return
 	}
-	now := st.roundMicros()
-	window := heDamageWindow.Microseconds()
+	now := st.roundMs()
+	window := heDamageWindow.Milliseconds()
 	var best *parseGrenade
 	for _, g := range st.grenades.pendingGrenades {
 		if g.gtype != "he" || !g.detonated || g.thrower != attacker {
 			continue
 		}
-		delta := now - g.detonateTimeMicroseconds
+		delta := now - g.detonateT
 		if delta < 0 || delta > window {
 			continue
 		}
-		if best == nil || g.detonateTimeMicroseconds > best.detonateTimeMicroseconds {
+		if best == nil || g.detonateT > best.detonateT {
 			best = g
 		}
 	}

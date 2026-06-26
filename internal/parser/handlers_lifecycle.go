@@ -12,12 +12,12 @@ func (st *parseState) lifecycle(kind string, pl *common.Player) {
 	if pl == nil || pl.SteamID64 == 0 || sideString(pl.Team) == "" {
 		return
 	}
-	st.match.MatchLifecycle = append(st.match.MatchLifecycle, model.LifecycleEvent{
-		Type:             kind,
-		SteamID:          pl.SteamID64,
-		Name:             pl.Name,
-		Round:            len(st.match.Rounds) + 1,
-		TimeMicroseconds: st.parsed.CurrentTime().Microseconds(),
+	st.match.Stats.MatchLifecycle = append(st.match.Stats.MatchLifecycle, model.LifecycleEvent{
+		Type:    kind,
+		SteamID: pl.SteamID64,
+		Name:    pl.Name,
+		Round:   len(st.match.Rounds) + 1,
+		TMs:     st.parsed.CurrentTime().Milliseconds(),
 	})
 }
 

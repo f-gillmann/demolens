@@ -3,7 +3,9 @@ package metrics
 import "github.com/f-gillmann/demolens/v2/model"
 
 // tags each round's opening duel (just the first kill), flags both players on
-// their RoundPlayer, and totals opening stats per side.
+// their RoundPlayer, and totals opening stats per side. The opening duel itself is
+// not emitted as its own field: it is fully recoverable from kills[0] (opening:true)
+// plus the RoundPlayer opened/won/traded flags set below.
 func computeOpenings(m *model.Match) {
 	team := teamMap(m)
 	idx := playerIndex(m)
@@ -14,24 +16,14 @@ func computeOpenings(m *model.Match) {
 			continue
 		}
 		first := r.Kills[0]
-		if first.Killer == 0 || first.Victim == 0 {
+		if first.KillerID() == 0 || first.Victim == 0 {
 			continue
 		}
 
 		side := sideMap(*r)
 		traded := newRoundIndex(*r).traded(first.Victim, team)
 
-		r.OpeningDuel = &model.OpeningDuel{
-			TimeMicroseconds: first.TimeMicroseconds,
-			Killer:           first.Killer,
-			KillerSide:       side[first.Killer],
-			Victim:           first.Victim,
-			VictimSide:       side[first.Victim],
-			Weapon:           first.Weapon,
-			Traded:           traded,
-		}
-
-		if rp := roundPlayer(r, first.Killer); rp != nil {
+		if rp := roundPlayer(r, first.KillerID()); rp != nil {
 			rp.OpenedDuel = true
 			rp.WonOpeningDuel = true
 		}
@@ -40,7 +32,7 @@ func computeOpenings(m *model.Match) {
 			rp.OpeningDeathTraded = traded
 		}
 
-		addOpening(idx[first.Killer], side[first.Killer], true, false)
+		addOpening(idx[first.KillerID()], side[first.KillerID()], true, false)
 		addOpening(idx[first.Victim], side[first.Victim], false, traded)
 	}
 }

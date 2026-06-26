@@ -10,8 +10,8 @@ import (
 // count as in position for a trade. squared so we skip the sqrt.
 const tradeProximitySq = 550.0 * 550.0
 
-// how long after a death a kill still counts as a trade.
-const tradeWindowMicros = 4_000_000
+// how long after a death a kill still counts as a trade, ms.
+const tradeWindowMs = 4_000
 
 // precomputed view of one round's kills. shared by KAST and trade detection.
 type roundIndex struct {
@@ -34,16 +34,16 @@ func newRoundIndex(round model.Round) roundIndex {
 	}
 
 	for _, kill := range round.Kills {
-		if kill.Killer != 0 {
-			idx.killers[kill.Killer] = true
+		if kill.KillerID() != 0 {
+			idx.killers[kill.KillerID()] = true
 		}
 		if kill.Assister != 0 {
 			idx.assisters[kill.Assister] = true
 		}
 		if kill.Victim != 0 {
 			idx.died[kill.Victim] = true
-			idx.deathTime[kill.Victim] = kill.TimeMicroseconds
-			idx.killerOf[kill.Victim] = kill.Killer
+			idx.deathTime[kill.Victim] = kill.TMs
+			idx.killerOf[kill.Victim] = kill.KillerID()
 		}
 	}
 	return idx
@@ -69,15 +69,15 @@ func (idx roundIndex) tradedBy(victim uint64, team map[uint64]string) uint64 {
 		if kill.Victim != killer {
 			continue
 		}
-		if kill.TimeMicroseconds < deathTime || kill.TimeMicroseconds-deathTime > tradeWindowMicros {
+		if kill.TMs < deathTime || kill.TMs-deathTime > tradeWindowMs {
 			continue
 		}
-		if team[kill.Killer] != team[victim] {
+		if team[kill.KillerID()] != team[victim] {
 			continue
 		}
-		if avenger == 0 || kill.TimeMicroseconds < avengerTime {
-			avenger = kill.Killer
-			avengerTime = kill.TimeMicroseconds
+		if avenger == 0 || kill.TMs < avengerTime {
+			avenger = kill.KillerID()
+			avengerTime = kill.TMs
 		}
 	}
 	return avenger
@@ -113,7 +113,7 @@ func tradeStats(m *model.Match) map[uint64]*tradeCounts {
 
 	for _, round := range m.Rounds {
 		for _, death := range round.Kills {
-			victim, killer, deathTime := death.Victim, death.Killer, death.TimeMicroseconds
+			victim, killer, deathTime := death.Victim, death.KillerID(), death.TMs
 			if victim == 0 || killer == 0 || team[victim] == "" {
 				continue
 			}
@@ -131,7 +131,7 @@ func tradeStats(m *model.Match) map[uint64]*tradeCounts {
 				}
 
 				// attempt: shot at any enemy inside the window
-				attempted := damagedAnyEnemy(round, mate.SteamID, team[mate.SteamID], team, deathTime, tradeWindowMicros)
+				attempted := damagedAnyEnemy(round, mate.SteamID, team[mate.SteamID], team, deathTime, tradeWindowMs)
 
 				c := getOrCreate(mate.SteamID)
 				c.killOpportunity++
@@ -164,7 +164,7 @@ func tradeStats(m *model.Match) map[uint64]*tradeCounts {
 // death: close enough, already damaging the killer, or who killed the killer.
 // Mirrors the tradeStats() opportunity gate for a single kill, sorted by steam_id.
 func possibleTraders(r model.Round, death model.RoundKill, team map[uint64]string) []uint64 {
-	victim, killer := death.Victim, death.Killer
+	victim, killer := death.Victim, death.KillerID()
 	if victim == 0 || killer == 0 || team[victim] == "" {
 		return nil
 	}
@@ -190,16 +190,20 @@ func possibleTraders(r model.Round, death model.RoundKill, team map[uint64]strin
 // trade window: near the kill spot, killed the killer, or already damaging the
 // killer. The trade-opportunity gate is "any of the three".
 func tradeReach(r model.Round, death model.RoundKill, mate model.AlivePlayer) (near, killed, damagedKiller bool) {
-	near = distSq(mate.Position, death.KillerPosition) <= tradeProximitySq
-	killed = killedWithin(r, mate.SteamID, death.Killer, death.TimeMicroseconds, tradeWindowMicros)
-	damagedKiller = damagedWithin(r, mate.SteamID, death.Killer, death.TimeMicroseconds, tradeWindowMicros)
+	// non-player kills (bomb/world/suicide) carry no killer position, so there is no
+	// spot to be "near"; the killed/damaged trade signals still apply.
+	if death.KillerPosition != nil {
+		near = distSq(mate.Position, *death.KillerPosition) <= tradeProximitySq
+	}
+	killed = killedWithin(r, mate.SteamID, death.KillerID(), death.TMs, tradeWindowMs)
+	damagedKiller = damagedWithin(r, mate.SteamID, death.KillerID(), death.TMs, tradeWindowMs)
 	return
 }
 
 func damagedWithin(r model.Round, attacker, victim uint64, after, window int64) bool {
 	for _, d := range r.Damages {
 		if d.Attacker == attacker && d.Victim == victim &&
-			d.TimeMicroseconds >= after && d.TimeMicroseconds-after <= window {
+			d.TMs >= after && d.TMs-after <= window {
 			return true
 		}
 	}
@@ -211,7 +215,7 @@ func damagedAnyEnemy(r model.Round, attacker uint64, attackerTeam string, team m
 		if d.Attacker != attacker || team[d.Victim] == "" || team[d.Victim] == attackerTeam {
 			continue
 		}
-		if d.TimeMicroseconds >= after && d.TimeMicroseconds-after <= window {
+		if d.TMs >= after && d.TMs-after <= window {
 			return true
 		}
 	}
@@ -220,8 +224,8 @@ func damagedAnyEnemy(r model.Round, attacker uint64, attackerTeam string, team m
 
 func killedWithin(r model.Round, killer, victim uint64, after, window int64) bool {
 	for _, k := range r.Kills {
-		if k.Killer == killer && k.Victim == victim &&
-			k.TimeMicroseconds >= after && k.TimeMicroseconds-after <= window {
+		if k.KillerID() == killer && k.Victim == victim &&
+			k.TMs >= after && k.TMs-after <= window {
 			return true
 		}
 	}

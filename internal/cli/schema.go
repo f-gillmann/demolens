@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strings"
 
 	"github.com/f-gillmann/demolens/v2/model"
 	"github.com/invopop/jsonschema"
@@ -33,6 +34,28 @@ func schemaCmd() *cobra.Command {
 			// here instead of putting an invopop import into model.
 			steamIDList := reflect.TypeOf(model.SteamIDList{})
 			multiKills := reflect.TypeOf(model.MultiKills{})
+			playerFrame := reflect.TypeOf(model.PlayerFrame{})
+			positionStream := reflect.TypeOf(model.PositionStream{})
+			groundItemFrame := reflect.TypeOf(model.GroundItemFrame{})
+			// one columnar position tuple, shared by the playerFrame and positionStream
+			// mappings so the field order / flag-bit doc stays in one place.
+			positionTuple := func() *jsonschema.Schema {
+				return &jsonschema.Schema{
+					Type:        "array",
+					MinItems:    u64(uint64(len(model.PositionFields))),
+					MaxItems:    u64(uint64(len(model.PositionFields))),
+					Description: "columnar position sample, fields in order: " + strings.Join(model.PositionFields, ", ") + " (flags bits: alive=1, airborne=2, scoped=4, ducking=8, has_defuse_kit=16, buyzone=32, walking=64, bomb_zone=128)",
+				}
+			}
+			// one columnar ground-item ground-position tuple (no velocity/state).
+			groundItemTuple := func() *jsonschema.Schema {
+				return &jsonschema.Schema{
+					Type:        "array",
+					MinItems:    u64(uint64(len(model.GroundItemPositionFields))),
+					MaxItems:    u64(uint64(len(model.GroundItemPositionFields))),
+					Description: "columnar ground-item position sample, fields in order: " + strings.Join(model.GroundItemPositionFields, ", "),
+				}
+			}
 			r.Mapper = func(t reflect.Type) *jsonschema.Schema {
 				switch t {
 				case steamIDList:
@@ -49,6 +72,16 @@ func schemaCmd() *cobra.Command {
 						MaxItems:    u64(5),
 						Description: "rounds with exactly [1,2,3,4,5] kills (index 0 = 1k ... index 4 = 5k)",
 					}
+				case positionStream:
+					return &jsonschema.Schema{
+						Type:                 "object",
+						AdditionalProperties: &jsonschema.Schema{Type: "array", Items: positionTuple()},
+						Description:          "per-round position samples grouped by steam_id (decimal string key); each value is that player's time-ordered array of columnar tuples",
+					}
+				case playerFrame:
+					return positionTuple()
+				case groundItemFrame:
+					return groundItemTuple()
 				}
 				return nil
 			}

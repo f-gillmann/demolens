@@ -13,15 +13,15 @@ type Grenades struct {
 // GrenadeFlash is one thrown flashbang. expire == detonate (instant) so expire is
 // dropped. No damage fields; flashes deal no HP damage.
 type GrenadeFlash struct {
-	GrenadeID                string   `json:"grenade_id"`
-	Thrower                  uint64   `json:"thrower,string"`
-	Side                     string   `json:"side,omitempty"`
-	Type                     string   `json:"kind"` // const "flash"
-	ThrowTimeMicroseconds    int64    `json:"throw_time_microseconds"`
-	DetonateTimeMicroseconds int64    `json:"detonate_time_microseconds,omitempty"`
-	FlightMicroseconds       int64    `json:"flight_microseconds,omitempty"`
-	ThrowPosition            Position `json:"throw_position"`
-	DetonatePosition         Position `json:"detonate_position,omitempty"`
+	GrenadeID        string   `json:"grenade_id"`
+	Thrower          uint64   `json:"thrower,string"`
+	Side             string   `json:"side,omitempty"`
+	Type             string   `json:"kind"` // const "flash"
+	ThrowMs          int64    `json:"throw_ms"`
+	DetonateMs       int64    `json:"detonate_ms,omitempty"`
+	FlightMs         int64    `json:"flight_ms,omitempty"`
+	ThrowPosition    Position `json:"throw_position"`
+	DetonatePosition Position `json:"detonate_position,omitempty"`
 
 	EnemiesFlashed   int             `json:"enemies_flashed,omitempty"`
 	TeammatesFlashed int             `json:"teammates_flashed,omitempty"`
@@ -31,15 +31,15 @@ type GrenadeFlash struct {
 // GrenadeHE is one thrown HE grenade. expire == detonate (instant) so expire is
 // dropped. Damage fields are omitempty: absent when it hit nobody.
 type GrenadeHE struct {
-	GrenadeID                string   `json:"grenade_id"`
-	Thrower                  uint64   `json:"thrower,string"`
-	Side                     string   `json:"side,omitempty"`
-	Type                     string   `json:"kind"` // const "he"
-	ThrowTimeMicroseconds    int64    `json:"throw_time_microseconds"`
-	DetonateTimeMicroseconds int64    `json:"detonate_time_microseconds,omitempty"`
-	FlightMicroseconds       int64    `json:"flight_microseconds,omitempty"`
-	ThrowPosition            Position `json:"throw_position"`
-	DetonatePosition         Position `json:"detonate_position,omitempty"`
+	GrenadeID        string   `json:"grenade_id"`
+	Thrower          uint64   `json:"thrower,string"`
+	Side             string   `json:"side,omitempty"`
+	Type             string   `json:"kind"` // const "he"
+	ThrowMs          int64    `json:"throw_ms"`
+	DetonateMs       int64    `json:"detonate_ms,omitempty"`
+	FlightMs         int64    `json:"flight_ms,omitempty"`
+	ThrowPosition    Position `json:"throw_position"`
+	DetonatePosition Position `json:"detonate_position,omitempty"`
 
 	DamageDealt int             `json:"damage_dealt,omitempty"` // total HP damage to ENEMIES
 	TeamDamage  int             `json:"team_damage,omitempty"`  // total HP damage to TEAMMATES
@@ -49,16 +49,16 @@ type GrenadeHE struct {
 // GrenadeMolotov is one thrown molotov or incendiary. expire is distinct here
 // (burn-out) so it is kept; burn duration = expire - detonate.
 type GrenadeMolotov struct {
-	GrenadeID                string   `json:"grenade_id"`
-	Thrower                  uint64   `json:"thrower,string"`
-	Side                     string   `json:"side,omitempty"`
-	Type                     string   `json:"kind"` // "molotov" or "incendiary"
-	ThrowTimeMicroseconds    int64    `json:"throw_time_microseconds"`
-	DetonateTimeMicroseconds int64    `json:"detonate_time_microseconds,omitempty"`
-	ExpireTimeMicroseconds   int64    `json:"expire_time_microseconds,omitempty"`
-	FlightMicroseconds       int64    `json:"flight_microseconds,omitempty"`
-	ThrowPosition            Position `json:"throw_position"`
-	DetonatePosition         Position `json:"detonate_position,omitempty"`
+	GrenadeID        string   `json:"grenade_id"`
+	Thrower          uint64   `json:"thrower,string"`
+	Side             string   `json:"side,omitempty"`
+	Type             string   `json:"kind"` // "molotov" or "incendiary"
+	ThrowMs          int64    `json:"throw_ms"`
+	DetonateMs       int64    `json:"detonate_ms,omitempty"`
+	ExpireMs         int64    `json:"expire_ms,omitempty"`
+	FlightMs         int64    `json:"flight_ms,omitempty"`
+	ThrowPosition    Position `json:"throw_position"`
+	DetonatePosition Position `json:"detonate_position,omitempty"`
 
 	DamageDealt int             `json:"damage_dealt,omitempty"` // total HP fire damage to ENEMIES
 	TeamDamage  int             `json:"team_damage,omitempty"`  // total HP fire damage to TEAMMATES
@@ -68,16 +68,16 @@ type GrenadeMolotov struct {
 
 // GrenadeBasic is one thrown smoke or decoy. No outcome data exists for these types.
 type GrenadeBasic struct {
-	GrenadeID                string   `json:"grenade_id"`
-	Thrower                  uint64   `json:"thrower,string"`
-	Side                     string   `json:"side,omitempty"`
-	Type                     string   `json:"kind"` // "smoke" or "decoy"
-	ThrowTimeMicroseconds    int64    `json:"throw_time_microseconds"`
-	DetonateTimeMicroseconds int64    `json:"detonate_time_microseconds,omitempty"`
-	ExpireTimeMicroseconds   int64    `json:"expire_time_microseconds,omitempty"`
-	FlightMicroseconds       int64    `json:"flight_microseconds,omitempty"`
-	ThrowPosition            Position `json:"throw_position"`
-	DetonatePosition         Position `json:"detonate_position,omitempty"`
+	GrenadeID        string   `json:"grenade_id"`
+	Thrower          uint64   `json:"thrower,string"`
+	Side             string   `json:"side,omitempty"`
+	Type             string   `json:"kind"` // "smoke" or "decoy"
+	ThrowMs          int64    `json:"throw_ms"`
+	DetonateMs       int64    `json:"detonate_ms,omitempty"`
+	ExpireMs         int64    `json:"expire_ms,omitempty"`
+	FlightMs         int64    `json:"flight_ms,omitempty"`
+	ThrowPosition    Position `json:"throw_position"`
+	DetonatePosition Position `json:"detonate_position,omitempty"`
 }
 
 // GrenadeVictim is one player damaged by an HE detonation or molotov inferno.

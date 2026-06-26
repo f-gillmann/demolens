@@ -239,19 +239,19 @@ func (st *parseState) buildLoadout(pl *common.Player) model.Loadout {
 func (st *parseState) inventorySnapshot(pl *common.Player, side, phase string, into int64) model.InventoryChange {
 	lo := st.buildLoadout(pl)
 	ic := model.InventoryChange{
-		SteamID:          pl.SteamID64,
-		Side:             side,
-		Phase:            phase,
-		TimeMicroseconds: into,
-		Health:           pl.Health(),
-		Armor:            pl.Armor(),
-		HasHelmet:        pl.HasHelmet(),
-		HasDefuseKit:     pl.HasDefuseKit(),
-		Money:            pl.Money(),
-		EquipmentValue:   pl.EquipmentValueCurrent(),
-		Weapons:          lo.Weapons,
-		Grenades:         lo.Grenades,
-		Equipment:        lo.Equipment,
+		SteamID:        pl.SteamID64,
+		Side:           side,
+		Phase:          phase,
+		TMs:            into,
+		Health:         pl.Health(),
+		Armor:          pl.Armor(),
+		HasHelmet:      pl.HasHelmet(),
+		HasDefuseKit:   pl.HasDefuseKit(),
+		Money:          pl.Money(),
+		EquipmentValue: pl.EquipmentValueCurrent(),
+		Weapons:        lo.Weapons,
+		Grenades:       lo.Grenades,
+		Equipment:      lo.Equipment,
 	}
 	if w := pl.ActiveWeapon(); w != nil {
 		ic.ActiveWeapon = w.String()

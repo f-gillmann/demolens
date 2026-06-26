@@ -18,21 +18,15 @@ const unitsPerMeter = 39.37
 // round went live.
 func roundKill(e events.Kill, into time.Duration) model.RoundKill {
 	rk := model.RoundKill{
-		TimeMicroseconds: into.Microseconds(),
-		Headshot:         e.IsHeadshot,
-		Wallbang:         e.IsWallBang(),
-		Penetration:      e.PenetratedObjects,
-		ThroughSmoke:     e.ThroughSmoke,
-		NoScope:          e.NoScope,
-		Distance:         round2(float64(e.Distance) * unitsPerMeter),
-		AttackerBlind:    e.AttackerBlind,
+		TMs:           into.Milliseconds(),
+		Headshot:      e.IsHeadshot,
+		Wallbang:      e.IsWallBang(),
+		Penetration:   e.PenetratedObjects,
+		ThroughSmoke:  e.ThroughSmoke,
+		NoScope:       e.NoScope,
+		AttackerBlind: e.AttackerBlind,
 	}
 
-	if e.Killer != nil {
-		rk.Killer = e.Killer.SteamID64
-		rk.KillerPosition = positionOf(e.Killer)
-		rk.KillerAirborne = e.Killer.IsAirborne()
-	}
 	if e.Victim != nil {
 		rk.Victim = e.Victim.SteamID64
 		rk.VictimPosition = positionOf(e.Victim)
@@ -50,6 +44,18 @@ func roundKill(e events.Kill, into time.Duration) model.RoundKill {
 		rk.WeaponClass = csdata.EquipmentClassName(e.Weapon.Class())
 	}
 	rk.Kind = killKind(e)
+	// killer is null for non-player kinds (bomb/world/suicide have no player killer
+	// in the killfeed sense). KillerID() returns 0 there for the metrics. The killer
+	// geometry (position/distance/airborne) rides only on a real player kill so a
+	// non-player kill stops emitting live-looking sentinels.
+	if rk.Kind == "player" && e.Killer != nil {
+		id := e.Killer.SteamID64
+		rk.Killer = &id
+		pos := positionOf(e.Killer)
+		rk.KillerPosition = &pos
+		rk.KillerAirborne = e.Killer.IsAirborne()
+		rk.Distance = round2(float64(e.Distance) * unitsPerMeter)
+	}
 
 	return rk
 }

@@ -17,40 +17,49 @@ import (
 // (no heavy streams, tier "core"). A non-empty Tier preset flips the stream
 // booleans on resolve; individual booleans set explicitly are not overridden.
 type Options struct {
-	PlayerFrames   bool        // "positions" stream: sample player pos + state each frame
-	Shots          bool        // "shots" stream: per-shot shooter geometry
-	GrenadePaths   bool        // "grenade_paths" stream: grenade trajectories + bounces
-	Inventory      bool        // "inventory" stream: mid-round inventory change log
-	DroppedWeapons bool        // "dropped_weapons" stream: world weapons at phase boundaries
-	Tier           string      // optional preset: core / detail / full. empty means full.
-	MapsDir        string      // .tri mesh dir for TTD los. empty disables TTD
-	Calibration    Calibration // aim-stat thresholds, zero fields fall back to defaults
+	PlayerFrames bool        // "positions" stream: sample player pos + state each frame
+	Shots        bool        // "shots" stream: per-shot shooter geometry
+	GrenadePaths bool        // "grenade_paths" stream: grenade trajectories + bounces
+	Inventory    bool        // "inventory" stream: mid-round inventory change log
+	GroundItems  bool        // "ground_items" stream: world weapons at phase boundaries
+	PositionsHz  float64     // positions-stream sample rate. <=0 falls back to defaultPositionsHz (4)
+	Tier         string      // optional preset: core / detail / full. empty means full.
+	MapsDir      string      // .tri mesh dir for TTD los. empty disables TTD
+	Calibration  Calibration // aim-stat thresholds, zero fields fall back to defaults
 }
 
 // stream names exactly as they appear in meta.output.streams, sorted.
 const (
-	streamPositions      = "positions"
-	streamShots          = "shots"
-	streamGrenadePaths   = "grenade_paths"
-	streamInventory      = "inventory"
-	streamDroppedWeapons = "dropped_weapons"
+	streamPositions    = "positions"
+	streamShots        = "shots"
+	streamGrenadePaths = "grenade_paths"
+	streamInventory    = "inventory"
+	streamGroundItems  = "ground_items"
 )
 
-// positionsSampleHz is the positions-stream sample rate, derived from the frame
-// sample period so it stays in lockstep with frameSamplePeriod.
-const positionsSampleHz = float64(time.Second) / float64(frameSamplePeriod)
+// defaultPositionsHz is the positions-stream sample rate when Options.PositionsHz
+// is unset (<=0). One sample / 250ms.
+const defaultPositionsHz = 4.0
+
+// framePeriod is the positions-stream sample interval for the configured Hz.
+func framePeriod(hz float64) time.Duration {
+	if hz <= 0 {
+		hz = defaultPositionsHz
+	}
+	return time.Duration(float64(time.Second) / hz)
+}
 
 // ResolveTier applies a Tier preset to the stream booleans: core off, detail on for
 // light streams, full/empty on for all. Unknown tiers leave caller-set booleans.
 func (o *Options) ResolveTier() {
 	switch o.Tier {
 	case "core":
-		o.PlayerFrames, o.Shots, o.GrenadePaths, o.Inventory, o.DroppedWeapons = false, false, false, false, false
+		o.PlayerFrames, o.Shots, o.GrenadePaths, o.Inventory, o.GroundItems = false, false, false, false, false
 	case "detail":
 		o.PlayerFrames, o.Shots, o.GrenadePaths = true, true, true
-		o.Inventory, o.DroppedWeapons = false, false
+		o.Inventory, o.GroundItems = false, false
 	case "full", "":
-		o.PlayerFrames, o.Shots, o.GrenadePaths, o.Inventory, o.DroppedWeapons = true, true, true, true, true
+		o.PlayerFrames, o.Shots, o.GrenadePaths, o.Inventory, o.GroundItems = true, true, true, true, true
 	}
 }
 
@@ -58,7 +67,7 @@ func (o *Options) ResolveTier() {
 // five are on, core when none are, detail otherwise. Mirrors ResolveTier.
 func (o Options) tierName() string {
 	on := 0
-	for _, b := range []bool{o.PlayerFrames, o.Shots, o.GrenadePaths, o.Inventory, o.DroppedWeapons} {
+	for _, b := range []bool{o.PlayerFrames, o.Shots, o.GrenadePaths, o.Inventory, o.GroundItems} {
 		if b {
 			on++
 		}
@@ -88,14 +97,12 @@ func (o Options) enabledStreamNames() []string {
 	if o.Inventory {
 		names = append(names, streamInventory)
 	}
-	if o.DroppedWeapons {
-		names = append(names, streamDroppedWeapons)
+	if o.GroundItems {
+		names = append(names, streamGroundItems)
 	}
 	sort.Strings(names)
 	return names
 }
-
-const frameSamplePeriod = 250 * time.Millisecond
 
 // prerollWindow is how much of each round's freezetime the positions stream keeps
 // before go-live, emitted as negative timestamps down to about -prerollWindow.
@@ -117,7 +124,7 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 	}()
 
 	opts.ResolveTier() // turn the tier preset into the stream booleans before we wire handlers
-	match := &model.Match{SchemaVersion: 5}
+	match := &model.Match{SchemaVersion: 6}
 	st := newParseState(parsed, opts, match)
 
 	parsed.RegisterNetMessageHandler(st.onServerInfo)
@@ -144,13 +151,16 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 	parsed.RegisterEventHandler(st.onInfernoPoll)
 	parsed.RegisterEventHandler(st.onInfernoExpired)
 
-	parsed.RegisterEventHandler(st.onDroppedWeaponsPoll)
+	parsed.RegisterEventHandler(st.onDataTablesParsed)
+	parsed.RegisterEventHandler(st.onGroundItemsPoll)
 
 	parsed.RegisterEventHandler(st.onSmokeStartTrack)
 	parsed.RegisterEventHandler(st.onSmokeExpiredTrack)
 
 	parsed.RegisterEventHandler(st.onPlayerFlashed)
 
+	parsed.RegisterEventHandler(st.onBombPlantBegin)
+	parsed.RegisterEventHandler(st.onBombPlantAborted)
 	parsed.RegisterEventHandler(st.onBombPlanted)
 	parsed.RegisterEventHandler(st.onBombDefuseStart)
 	parsed.RegisterEventHandler(st.onBombDefuseAborted)

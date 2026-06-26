@@ -19,6 +19,12 @@ type WeaponSpray struct {
 
 // SprayDeviation holds how a player's sprays with one weapon matched its recoil
 // pattern, averaged over every 3+ shot spray they fired.
+//
+// ORIGIN: the reference pattern these deviate from is base/pattern-space, taken
+// from csdata.SprayPatterns, which matches Leetify's reference weaponX/weaponY
+// table byte-for-byte. It is NOT real GOTV recoil: real recoil (from the demo's
+// CMsgTEFireBullets) is roughly 2x and lives in a different space. Consumers should
+// treat ideal_x/ideal_y as pattern-space and NOT reimplement recoil math on top.
 type SprayDeviation struct {
 	Weapon       string        `json:"weapon"`      // display weapon name, e.g. "AUG"
 	Scoped       bool          `json:"scoped"`      // fired while scoped in (AUG/SG553 have a scoped pattern)

@@ -2,8 +2,11 @@ package parser
 
 import (
 	"fmt"
+	"math"
+	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/f-gillmann/demolens/v2/internal/csdata"
@@ -14,6 +17,7 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/msg"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/sendtables"
 )
 
 // defaultBuyTimeSec is the mp_buytime fallback when the convar is missing or
@@ -44,7 +48,7 @@ func (st *parseState) track(id uint64, name string) {
 
 // finalize flushes the current round (including post-round damage/shots) into the
 // match. It assembles shot_stats and, when their streams are on, the round-end
-// inventory and dropped-weapon snapshots before appending.
+// inventory and ground-item snapshots before appending.
 func (st *parseState) finalize() {
 	if st.pending == nil {
 		return
@@ -57,8 +61,8 @@ func (st *parseState) finalize() {
 	st.pending.Grenades = finalizeGrenades(st.grenades.pendingGrenades)
 	st.pending.ShotStats = finalizeShotStats(st.shotStats, st.pending.Damages)
 	st.snapshotInventories("round_end")
-	st.flushDroppedWeapons() // any ground stints still open after the post-round
-	sortStreams(st.pending.Streams)
+	st.flushGroundItems() // any ground stints still open after the post-round
+	sortStreams(st.pending.Streams, st.framePeriod)
 	st.match.Rounds = append(st.match.Rounds, *st.pending)
 	st.pending = nil
 	st.pendingPlayers = nil
@@ -131,6 +135,13 @@ func (st *parseState) onFreezetimeEnd(_ events.RoundFreezetimeEnd) {
 	st.pending = &model.Round{
 		Number: len(st.match.Rounds) + 1,
 	}
+	// explicit phase markers: the round timeline is relative to go-live, so freeze
+	// ends at 0 and the freeze (round) start is the negative offset back to the
+	// matching RoundStart. 0 when that start is unknown (e.g. the opening round).
+	st.pending.FreezeEndMs = 0
+	if st.freezeStart > 0 && st.freezeStart <= st.roundStart {
+		st.pending.RoundStartMs = (st.freezeStart - st.roundStart).Milliseconds()
+	}
 	captureTeams(gs, st.players, st.sideToTeam)
 	st.pendingPlayers = st.roundRoster(gs)
 	st.grenades.pendingGrenades = map[int64]*parseGrenade{}
@@ -142,7 +153,11 @@ func (st *parseState) onFreezetimeEnd(_ events.RoundFreezetimeEnd) {
 	st.grenades.grenadeSeq = 0
 	st.lastInvHash = map[uint64]string{}
 	st.firstContact = false
-	st.droppedOpen = map[int]*model.DroppedWeapon{}
+	st.groundItemsOpen = map[int]*model.DroppedItem{}
+	st.groundItemSerial = map[int]int{}
+	st.kitOpen = map[int]*kitStint{}
+	st.kitHad = map[uint64]bool{}
+	st.deathTimes = map[uint64]int64{}
 
 	st.roundLive = true
 	st.framePhase = phaseLive
@@ -164,7 +179,7 @@ func (st *parseState) flushPreroll() {
 			if b.abs < cutoff {
 				continue
 			}
-			b.frame.TimeMicroseconds = (b.abs - st.roundStart).Microseconds()
+			b.frame.TMs = (b.abs - st.roundStart).Milliseconds()
 			streams.Positions = append(streams.Positions, b.frame)
 		}
 	}
@@ -179,13 +194,55 @@ func (st *parseState) onRoundStart(_ events.RoundStart) {
 	}
 	// the upcoming round's freezetime begins: start buffering its pre-roll and stop
 	// attaching frames to the previous round (still the current pending until its
-	// finalize at the next freezetime end).
+	// finalize at the next freezetime end). Stamp this as the next round's freeze
+	// (round) start for the round_start_t marker.
 	st.framePhase = phaseFreeze
 	st.prerollBuf = nil
+	st.freezeStart = st.parsed.CurrentTime()
 	if st.pending == nil || st.roundLive {
 		return
 	}
-	st.pending.PostRoundMicroseconds = (st.parsed.CurrentTime() - st.roundEndTime).Microseconds()
+	st.pending.PostRoundMs = (st.parsed.CurrentTime() - st.roundEndTime).Milliseconds()
+}
+
+// onBombPlantBegin logs a started plant (real or fake) as an open attempt on the
+// current round's bomb. A fake plant can happen with no completed plant ever firing,
+// so the bomb is created here when it does not exist yet.
+func (st *parseState) onBombPlantBegin(e events.BombPlantBegin) {
+	if st.pending == nil {
+		return
+	}
+	if st.pending.Bomb == nil {
+		st.pending.Bomb = &model.Bomb{}
+	}
+	att := model.PlantAttempt{TMs: st.roundMs()}
+	if e.Player != nil {
+		st.track(e.Player.SteamID64, e.Player.Name)
+		att.Planter = e.Player.SteamID64
+	}
+	st.pending.Bomb.PlantAttempts = append(st.pending.Bomb.PlantAttempts, att)
+}
+
+// onBombPlantAborted marks the last still-open (non-aborted, uncompleted) plant
+// attempt as aborted: the planter started then cancelled (a fake plant).
+func (st *parseState) onBombPlantAborted(_ events.BombPlantAborted) {
+	if st.pending == nil || st.pending.Bomb == nil {
+		return
+	}
+	if att := lastOpenPlant(st.pending.Bomb.PlantAttempts); att != nil {
+		att.Aborted = true
+	}
+}
+
+// lastOpenPlant returns the last plant attempt that is neither aborted nor completed,
+// scanning from the end. nil when none are open. Mirrors lastOpenDefuse.
+func lastOpenPlant(attempts []model.PlantAttempt) *model.PlantAttempt {
+	for i := len(attempts) - 1; i >= 0; i-- {
+		if !attempts[i].Aborted && !attempts[i].Completed {
+			return &attempts[i]
+		}
+	}
+	return nil
 }
 
 func (st *parseState) onBombPlanted(e events.BombPlanted) {
@@ -196,11 +253,17 @@ func (st *parseState) onBombPlanted(e events.BombPlanted) {
 		st.pending.Bomb = &model.Bomb{}
 	}
 	st.pending.Bomb.Site = bombSite(e.Site)
-	st.pending.Bomb.PlantTimeMicroseconds = st.roundMicros()
+	st.pending.Bomb.PlantMs = st.roundMs()
 	if e.Player != nil {
 		st.track(e.Player.SteamID64, e.Player.Name)
 		st.pending.Bomb.Planter = e.Player.SteamID64
-		st.pending.Bomb.PlantPosition = positionOf(e.Player)
+		pos := positionOf(e.Player)
+		st.pending.Bomb.PlantPosition = &pos
+	}
+	// the plant completed: close its matching open attempt so a later stray abort
+	// can't re-mark the completed plant as aborted.
+	if att := lastOpenPlant(st.pending.Bomb.PlantAttempts); att != nil {
+		att.Completed = true
 	}
 	st.snapshotInventories("bomb_plant")
 }
@@ -212,8 +275,8 @@ func (st *parseState) onBombDefuseStart(e events.BombDefuseStart) {
 		return
 	}
 	att := model.DefuseAttempt{
-		TimeMicroseconds: st.roundMicros(),
-		HasKit:           e.HasKit,
+		TMs:    st.roundMs(),
+		HasKit: e.HasKit,
 	}
 	if e.Player != nil {
 		st.track(e.Player.SteamID64, e.Player.Name)
@@ -238,16 +301,17 @@ func (st *parseState) onBombDefused(e events.BombDefused) {
 		return
 	}
 	st.pending.Bomb.Defused = true
-	st.pending.Bomb.DefuseTimeMicroseconds = st.roundMicros()
+	st.pending.Bomb.DefuseMs = st.roundMs()
 	if e.Player != nil {
 		st.track(e.Player.SteamID64, e.Player.Name)
 		st.pending.Bomb.Defuser = e.Player.SteamID64
-		st.pending.Bomb.DefusePosition = positionOf(e.Player)
+		pos := positionOf(e.Player)
+		st.pending.Bomb.DefusePosition = &pos
 	}
 	// pull the successful defuse's start/kit from its matching open attempt.
 	if att := lastOpenDefuse(st.pending.Bomb.DefuseAttempts); att != nil {
-		st.pending.Bomb.DefuseStartTimeMicroseconds = att.TimeMicroseconds
-		st.pending.Bomb.DefuseHasKit = att.HasKit
+		st.pending.Bomb.DefuseStartedMs = att.TMs
+		st.pending.Bomb.HasKit = att.HasKit
 	}
 }
 
@@ -275,11 +339,11 @@ func (st *parseState) onRoundEnd(end events.RoundEnd) {
 	st.pending.WinnerSide = sideString(end.Winner)
 	st.pending.WinnerTeam = st.sideToTeam[end.Winner]
 	st.pending.Reason = reasonString(end.Reason)
-	st.pending.RoundEndMicroseconds = st.roundMicros()
+	st.pending.RoundEndMs = st.roundMs()
 	st.roundEndTime = st.parsed.CurrentTime()
 	st.roundLive = false // post-round: damage/shots/exit-kills still count, K/D doesn't
 	st.framePhase = phasePost
-	// dropped weapons keep polling through the post-round (exit-frag drops), so the
+	// ground items keep polling through the post-round (exit-frag drops), so the
 	// open ground stints are flushed at finalize rather than here, to avoid re-opening
 	// and double-counting guns that stay down across round end.
 }
@@ -295,7 +359,7 @@ func (st *parseState) snapshotInventories(phase string) {
 	if streams == nil {
 		return
 	}
-	into := st.roundMicros()
+	into := st.roundMs()
 	for _, pl := range st.parsed.GameState().Participants().Playing() {
 		side := sideString(pl.Team)
 		if side == "" {
@@ -329,98 +393,366 @@ func inventoryFingerprint(ic model.InventoryChange) string {
 	return string(b)
 }
 
-// onDroppedWeaponsPoll tracks each gun-on-the-ground stint by polling weapon owner
-// transitions every frame (CS2 has no ground/pickup event). A gun with no owner
-// opens an interval; the same gun regaining an owner closes it as a pickup. Keyed
-// by the weapon entity id, which is stable for the life of the entity and reset
-// each round. Still-open intervals are flushed at round end.
-func (st *parseState) onDroppedWeaponsPoll(_ events.FrameDone) {
+// onGroundItemsPoll tracks each item-on-the-ground stint by polling weapon owner
+// transitions every frame (CS2 has no ground/pickup event). A gun (or the loose c4)
+// with no owner opens an interval; the same entity regaining an owner closes it as a
+// pickup. Keyed by the weapon entity id, which is stable for the life of the entity
+// and reset each round. While a stint is open the entity's ground position is sampled
+// at the positions cadence (see groundItemSampleTick), building an RLE-collapsible track
+// so a nade-shoved or re-dropped item shows its new positions. Still-open intervals
+// are flushed at round end.
+func (st *parseState) onGroundItemsPoll(_ events.FrameDone) {
 	// run during the live round and the post-round (exit-frag drops), but not during
 	// freezetime, where pending is the previous round.
-	if !st.opts.DroppedWeapons || st.pending == nil || (!st.roundLive && st.framePhase != phasePost) {
+	if !st.opts.GroundItems || st.pending == nil || (!st.roundLive && st.framePhase != phasePost) {
 		return
 	}
+	// re-sample the position track only during the live round: the post-round poll
+	// still opens/closes stints (exit-frag drops keep their seed position) but the
+	// engine mass-relocates resting weapons at round end, which is not a real shove.
+	sample := st.roundLive && st.groundItemSampleTick()
 	for _, w := range st.parsed.GameState().Weapons() {
-		if w == nil || w.Entity == nil || !csdata.IsGun(w) {
-			continue // only guns; grenades, c4 and kits are not "dropped guns"
+		if w == nil || w.Entity == nil {
+			continue
+		}
+		// trackable droppables (guns, grenades, zeus, knife) plus the loose c4; the
+		// defuse kit is a separate prop tracked via pollKits. A dropped grenade WEAPON
+		// entity is a nade lying on the ground, distinct from the in-flight projectile
+		// in grenade_paths (a separate CBaseCSGrenadeProjectile), so no double-count.
+		// the carried c4 has an owner (skipped below); the planted c4 is a separate
+		// entity that never appears in Weapons(), so plant_position is not duplicated.
+		if !csdata.IsGroundTrackable(w) && w.Type != common.EqBomb {
+			continue
 		}
 		id := w.Entity.ID()
+		serial := w.Entity.SerialNum()
 		if w.Owner == nil {
-			if st.droppedOpen[id] != nil {
-				continue // already tracking this ground stint
+			dw := st.groundItemsOpen[id]
+			if dw == nil {
+				st.groundItemsOpen[id] = st.openGroundStint(w)
+				st.groundItemSerial[id] = serial
+				continue
 			}
-			lastOwner := st.weaponPrevOwner(w)
-			st.droppedOpen[id] = &model.DroppedWeapon{
-				Weapon:                w.String(),
-				Class:                 csdata.EquipmentClassName(w.Class()),
-				Position:              equipmentPosition(w),
-				DroppedAtMicroseconds: st.roundMicros(),
-				LastOwner:             lastOwner,
-				OnDeath:               st.playerDead(lastOwner),
-				AmmoMagazine:          w.AmmoInMagazine(),
-				AmmoReserve:           w.AmmoReserve(),
+			if st.groundItemSerial[id] != serial {
+				// the entity slot was reused by a different physical weapon (Source 2
+				// recycles ids): close the old stint and open a fresh one so the track
+				// doesn't teleport from the old gun's rest spot to the new gun's.
+				st.closeGroundStint(dw)
+				st.groundItemsOpen[id] = st.openGroundStint(w)
+				st.groundItemSerial[id] = serial
+				continue
+			}
+			if sample {
+				st.appendGroundSample(dw, w)
 			}
 			continue
 		}
 		// held again: close the open ground stint as a pickup.
-		if dw := st.droppedOpen[id]; dw != nil {
-			dw.PickedUpAtMicroseconds = st.roundMicros()
+		if dw := st.groundItemsOpen[id]; dw != nil {
+			dw.PickedUpAtMs = st.roundMs()
 			dw.PickedUpBy = w.Owner.SteamID64
-			st.appendDroppedWeapon(dw)
-			delete(st.droppedOpen, id)
+			st.closeGroundStint(dw)
+			delete(st.groundItemsOpen, id)
 		}
 	}
+	st.pollKits(sample)
 }
 
-// flushDroppedWeapons appends every still-open ground stint to the round stream
-// (no picked_up_* = still down at round end) and clears the open map.
-func (st *parseState) flushDroppedWeapons() {
-	if !st.opts.DroppedWeapons {
-		return
-	}
-	for _, dw := range st.droppedOpen {
-		st.appendDroppedWeapon(dw)
-	}
-	st.droppedOpen = map[int]*model.DroppedWeapon{}
-}
-
-// appendDroppedWeapon adds a finished ground stint to the round's dropped_weapons
-// stream, lazily allocating the stream holder.
-func (st *parseState) appendDroppedWeapon(dw *model.DroppedWeapon) {
-	if streams := st.ensureStreams(); streams != nil {
-		streams.DroppedWeapons = append(streams.DroppedWeapons, *dw)
-	}
-}
-
-// playerDead reports whether the player with this SteamID64 is currently not alive.
-// Unknown id (0 or not found among playing players) reports false.
-func (st *parseState) playerDead(id uint64) bool {
-	if id == 0 {
+// groundItemSampleTick reports whether the current frame is a position-track sample tick
+// for dropped entities, advancing the cursor when it is. It uses the same framePeriod
+// as the player positions stream (its own cursor so the two handlers don't contend),
+// so ground items sample at the same cadence as players.
+func (st *parseState) groundItemSampleTick() bool {
+	cur := st.parsed.CurrentTime()
+	if cur-st.frames.lastGroundItemSample < st.framePeriod {
 		return false
 	}
-	for _, pl := range st.parsed.GameState().Participants().Playing() {
-		if pl.SteamID64 == id {
-			return !pl.IsAlive()
+	st.frames.lastGroundItemSample = cur
+	return true
+}
+
+// groundItemClass is the ground_items class token for a dropped world entity: guns
+// keep their gun class (pistol/smg/heavy/rifle), the loose c4 is "c4", a knife is
+// "knife", and grenades and the zeus carry "grenade"/"equipment" from their broad
+// equipment class. Kept local to ground items so the kill weapon_class and loadout
+// class (both csdata.EquipmentClassName) stay unchanged.
+func groundItemClass(w *common.Equipment) string {
+	switch {
+	case w.Type == common.EqBomb:
+		return "c4"
+	case w.Type == common.EqKnife:
+		return "knife"
+	case w.Class() == common.EqClassGrenade:
+		return "grenade"
+	case w.Class() == common.EqClassEquipment:
+		return "equipment" // the zeus (and any other equipment-class droppable)
+	default:
+		return csdata.EquipmentClassName(w.Class()) // gun classes
+	}
+}
+
+// openGroundStint begins a ground stint for a just-dropped gun, grenade, zeus, knife
+// or the loose c4, seeding the position track with the entity's current position.
+func (st *parseState) openGroundStint(w *common.Equipment) *model.DroppedItem {
+	t := st.roundMs()
+	class := groundItemClass(w)
+	lastOwner := st.weaponPrevOwner(w)
+	dw := &model.DroppedItem{
+		Item:         w.String(),
+		Class:        class,
+		DroppedAtMs:  t,
+		IsInitial:    t == 0, // round-start/spawn state, not a real mid-round drop
+		LastOwner:    lastOwner,
+		AmmoMagazine: w.AmmoInMagazine(),
+		AmmoReserve:  w.AmmoReserve(),
+	}
+	// on_death is resolved at close (see closeGroundStint), not here: the weapon
+	// un-owns ~1 tick before the owner's death event fires, so the death time is
+	// not yet recorded when the stint opens.
+	st.appendGroundSample(dw, w)
+	return dw
+}
+
+// closeGroundStint finalizes a gun/grenade/c4 ground stint: it resolves on_death
+// from the last owner's recorded death time (now known, since the death event has
+// fired by pickup/flush) then appends it. The defuse-kit path keeps its own
+// death-based on_death (owner != 0) and appends via appendGroundItem directly.
+func (st *parseState) closeGroundStint(dw *model.DroppedItem) {
+	dw.OnDeath = st.droppedOnDeath(dw.LastOwner, dw.DroppedAtMs)
+	st.appendGroundItem(dw)
+}
+
+// droppedOnDeath reports whether a ground stint opened because its last owner died,
+// rather than a manual G-key drop or a buy/weapon-swap while alive. The weapon
+// un-owns ~1 tick before the owner's death event fires, so this compares the drop
+// time to the owner's recorded death time within a small grace window. An unknown
+// owner (0 / never died this round) or a drop far from the owner's death is false.
+func (st *parseState) droppedOnDeath(owner uint64, dropMs int64) bool {
+	if owner == 0 {
+		return false
+	}
+	deathMs, ok := st.deathTimes[owner]
+	if !ok {
+		return false
+	}
+	// the race is ~1 tick; a modest grace absorbs frame/event-order jitter without
+	// flagging a manual drop the owner made well before they later died.
+	const graceMs = 500
+	d := dropMs - deathMs
+	if d < 0 {
+		d = -d
+	}
+	return d <= graceMs
+}
+
+// appendGroundSample adds the entity's current ground position to the stint's track.
+// No-op when the entity position is unreadable (entity gone).
+func (st *parseState) appendGroundSample(dw *model.DroppedItem, w *common.Equipment) {
+	if pos := equipmentPosition(w); pos != nil {
+		dw.Positions = append(dw.Positions, model.GroundItemFrame{TMs: st.roundMs(), Position: *pos})
+	}
+}
+
+// onDataTablesParsed wires the defuse-kit world entity once the net tables exist.
+// Only needed when the ground_items stream is on.
+func (st *parseState) onDataTablesParsed(_ events.DataTablesParsed) {
+	if !st.opts.GroundItems {
+		return
+	}
+	sc := st.kitServerClass()
+	if sc == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(os.Stderr, "demolens: defuse-kit world entity class = %s\n", sc.Name())
+	sc.OnEntityCreated(st.onKitCreated)
+}
+
+// kitServerClass finds the server class the dropped defuse kit spawns as. It
+// prefers a typed defuser class (Source 1 item_defuser / CItemDefuser) if present,
+// else falls back to CBaseAnimGraph: CS2 ships no typed defuser class in the net
+// tables and spawns the dropped kit as a generic anim-graph prop, confirmed per
+// instance by its model handle in onKitCreated.
+func (st *parseState) kitServerClass() sendtables.ServerClass {
+	classes := st.parsed.ServerClasses()
+	for _, sc := range classes.All() {
+		if strings.Contains(strings.ToLower(sc.Name()), "defus") {
+			return sc
 		}
 	}
-	return false
+	return classes.FindByName("CBaseAnimGraph")
+}
+
+// onKitCreated opens a defuse-kit ground stint for a freshly-spawned kit prop. The
+// kit only enters the world when a carrier dies, so it is tracked during the live
+// round only (post-round drops follow the same mass-relocation artifact the gun
+// tracks avoid). Every kit prop shares one model handle; the first one's handle is
+// locked and any later anim-graph prop with a different model is ignored, so a
+// stray non-kit CBaseAnimGraph cannot masquerade as a kit.
+func (st *parseState) onKitCreated(e sendtables.Entity) {
+	if !st.opts.GroundItems || !st.roundLive || st.pending == nil || e == nil {
+		return
+	}
+	modelHandle, _ := propU64(e, "CBodyComponent.m_hModel")
+	if !st.kitModelSet {
+		st.kitModel = modelHandle
+		st.kitModelSet = true
+	} else if modelHandle != st.kitModel {
+		return
+	}
+	raw, ok := safePosition(e)
+	if !ok {
+		return
+	}
+	t := st.roundMs()
+	pos := toPosition(raw)
+	owner := st.nearestDeadCT(raw)
+	stint := &kitStint{
+		ent:     e,
+		lastPos: pos,
+		dw: &model.DroppedItem{
+			Item:        common.EqDefuseKit.String(), // "Defuse Kit"
+			Class:       "equipment",                 // distinct class so the consumer renders a kit icon, not a pistol
+			DroppedAtMs: t,
+			LastOwner:   owner,
+			OnDeath:     owner != 0, // kits only enter the world on a carrier's death
+			Positions:   []model.GroundItemFrame{{TMs: t, Position: pos}},
+		},
+	}
+	st.kitOpen[e.ID()] = stint
+	e.OnDestroy(func() { stint.gone = true })
+}
+
+// nearestDeadCT returns the SteamID64 of the dead CT nearest pos within
+// kitDropRadius: the kit carrier who just died there. 0 when none is close, so a
+// kit whose carrier can't be pinned down is left unattributed.
+func (st *parseState) nearestDeadCT(pos r3.Vector) uint64 {
+	const kitDropRadius = 200.0
+	var best uint64
+	bestD := kitDropRadius
+	for _, pl := range st.parsed.GameState().Participants().Playing() {
+		if pl == nil || pl.IsAlive() || sideString(pl.Team) != "CT" {
+			continue
+		}
+		if d := pl.Position().Sub(pos).Norm(); d <= bestD {
+			bestD = d
+			best = pl.SteamID64
+		}
+	}
+	return best
+}
+
+// pollKits advances the open defuse-kit ground stints each frame: it samples the
+// live kit positions on the shared dropped cadence, then pairs a CT's defuse-kit
+// flag gaining next to an open stint as a real pickup. The kit prop never networks
+// an owner, so the picker is the CT whose flag flips on at the entity (not an owner
+// handle); a flag gain with no kit nearby is a buy and is ignored.
+func (st *parseState) pollKits(sample bool) {
+	if sample {
+		for _, s := range st.kitOpen {
+			if s.gone {
+				continue
+			}
+			if raw, ok := safePosition(s.ent); ok {
+				s.lastPos = toPosition(raw)
+				s.dw.Positions = append(s.dw.Positions, model.GroundItemFrame{TMs: st.roundMs(), Position: s.lastPos})
+			}
+		}
+	}
+	const pickupRadius = 150.0
+	for _, pl := range st.parsed.GameState().Participants().Playing() {
+		if pl == nil {
+			continue
+		}
+		id := pl.SteamID64
+		has := pl.HasDefuseKit()
+		gained := has && !st.kitHad[id]
+		st.kitHad[id] = has
+		if !gained || len(st.kitOpen) == 0 {
+			continue
+		}
+		ppos := pl.Position()
+		bestID, bestD := -1, pickupRadius
+		for eid, s := range st.kitOpen {
+			dx, dy, dz := s.lastPos.X-ppos.X, s.lastPos.Y-ppos.Y, s.lastPos.Z-ppos.Z
+			if d := math.Sqrt(dx*dx + dy*dy + dz*dz); d <= bestD {
+				bestD, bestID = d, eid
+			}
+		}
+		if bestID < 0 {
+			continue
+		}
+		dw := st.kitOpen[bestID].dw
+		dw.PickedUpAtMs = st.roundMs()
+		dw.PickedUpBy = id
+		st.appendGroundItem(dw)
+		delete(st.kitOpen, bestID)
+	}
+}
+
+// flushGroundItems appends every still-open ground stint to the round stream
+// (no picked_up_* = still down at round end) and clears the open map.
+func (st *parseState) flushGroundItems() {
+	if !st.opts.GroundItems {
+		return
+	}
+	for _, dw := range st.groundItemsOpen {
+		st.closeGroundStint(dw)
+	}
+	st.groundItemsOpen = map[int]*model.DroppedItem{}
+	st.groundItemSerial = map[int]int{}
+	for _, s := range st.kitOpen {
+		st.appendGroundItem(s.dw) // still down at round end: no picked_up_*
+	}
+	st.kitOpen = map[int]*kitStint{}
+}
+
+// appendGroundItem adds a finished ground stint to the round's ground_items
+// stream, RLE-collapsing its position track first and lazily allocating the holder.
+func (st *parseState) appendGroundItem(dw *model.DroppedItem) {
+	dw.Positions = collapseGroundItemTrack(dw.Positions)
+	if streams := st.ensureStreams(); streams != nil {
+		streams.GroundItems = append(streams.GroundItems, *dw)
+	}
+}
+
+// collapseGroundItemTrack RLE-compresses a dropped entity's position track: runs of
+// consecutive samples at the same position fold onto one frame whose HoldFrames counts
+// the dropped duplicates. A still-resting item becomes a single tuple with a large
+// hold_frames; a shoved or re-dropped item keeps each new position. Positions are
+// compared exactly: a static entity reports byte-identical floats every sample.
+func collapseGroundItemTrack(track []model.GroundItemFrame) []model.GroundItemFrame {
+	if len(track) <= 1 {
+		return track
+	}
+	out := make([]model.GroundItemFrame, 0, len(track))
+	kept := track[0]
+	for i := 1; i < len(track); i++ {
+		if track[i].Position == kept.Position {
+			kept.HoldFrames++
+			continue
+		}
+		out = append(out, kept)
+		kept = track[i]
+	}
+	out = append(out, kept)
+	return out
 }
 
 // sortStreams sorts the map-derived stream slices for deterministic output. shots
 // are appended in event order already; positions, grenade_paths, inventory and
-// dropped-weapons are built by ranging maps and need a stable order. No-op when nil.
-func sortStreams(s *model.RoundStreams) {
+// ground-items are built by ranging maps and need a stable order. No-op when nil.
+func sortStreams(s *model.RoundStreams, period time.Duration) {
 	if s == nil {
 		return
 	}
 	sort.SliceStable(s.Positions, func(i, j int) bool {
 		a, b := s.Positions[i], s.Positions[j]
-		if a.TimeMicroseconds != b.TimeMicroseconds {
-			return a.TimeMicroseconds < b.TimeMicroseconds
+		if a.TMs != b.TMs {
+			return a.TMs < b.TMs
 		}
 		return a.SteamID < b.SteamID
 	})
-	s.Positions = compressPositions(s.Positions)
+	s.Positions = compressPositions(s.Positions, period)
 	sort.SliceStable(s.GrenadePaths, func(i, j int) bool {
 		return s.GrenadePaths[i].GrenadeID < s.GrenadePaths[j].GrenadeID
 	})
@@ -429,18 +761,18 @@ func sortStreams(s *model.RoundStreams) {
 		if a.SteamID != b.SteamID {
 			return a.SteamID < b.SteamID
 		}
-		if a.TimeMicroseconds != b.TimeMicroseconds {
-			return a.TimeMicroseconds < b.TimeMicroseconds
+		if a.TMs != b.TMs {
+			return a.TMs < b.TMs
 		}
 		return a.Phase < b.Phase
 	})
-	sort.SliceStable(s.DroppedWeapons, func(i, j int) bool {
-		a, b := s.DroppedWeapons[i], s.DroppedWeapons[j]
-		if a.DroppedAtMicroseconds != b.DroppedAtMicroseconds {
-			return a.DroppedAtMicroseconds < b.DroppedAtMicroseconds
+	sort.SliceStable(s.GroundItems, func(i, j int) bool {
+		a, b := s.GroundItems[i], s.GroundItems[j]
+		if a.DroppedAtMs != b.DroppedAtMs {
+			return a.DroppedAtMs < b.DroppedAtMs
 		}
-		if a.Weapon != b.Weapon {
-			return a.Weapon < b.Weapon
+		if a.Item != b.Item {
+			return a.Item < b.Item
 		}
 		return a.LastOwner < b.LastOwner
 	})
@@ -453,13 +785,14 @@ func sortStreams(s *model.RoundStreams) {
 // dropped samples; a time gap larger than ~1.5 sample periods (e.g. a disconnect)
 // breaks the run even when the state is identical. Output is re-sorted by time then
 // steam_id so it stays deterministic and consistent with the rest of the stream.
-func compressPositions(frames []model.PlayerFrame) []model.PlayerFrame {
+func compressPositions(frames []model.PlayerFrame, period time.Duration) []model.PlayerFrame {
 	if len(frames) == 0 {
 		return frames
 	}
 
-	// max gap that still counts as the immediate next sample of a run.
-	maxGap := int64(frameSamplePeriod/time.Microsecond) * 3 / 2
+	// max gap that still counts as the immediate next sample of a run. ms, matching
+	// the frame timestamps and the configured sample period.
+	maxGap := int64(period/time.Millisecond) * 3 / 2
 
 	// group by steam_id, preserving the incoming time order within each group.
 	order := make([]uint64, 0)
@@ -475,25 +808,25 @@ func compressPositions(frames []model.PlayerFrame) []model.PlayerFrame {
 	for _, id := range order {
 		group := byPlayer[id]
 		kept := group[0]
-		lastSeen := kept.TimeMicroseconds
+		lastSeen := kept.TMs
 		for i := 1; i < len(group); i++ {
 			f := group[i]
-			gap := f.TimeMicroseconds - lastSeen
+			gap := f.TMs - lastSeen
 			if gap > 0 && gap <= maxGap && sameFrameState(&f, &kept) {
 				kept.HoldFrames++
-				lastSeen = f.TimeMicroseconds
+				lastSeen = f.TMs
 				continue
 			}
 			out = append(out, kept)
 			kept = f
-			lastSeen = f.TimeMicroseconds
+			lastSeen = f.TMs
 		}
 		out = append(out, kept)
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].TimeMicroseconds != out[j].TimeMicroseconds {
-			return out[i].TimeMicroseconds < out[j].TimeMicroseconds
+		if out[i].TMs != out[j].TMs {
+			return out[i].TMs < out[j].TMs
 		}
 		return out[i].SteamID < out[j].SteamID
 	})
@@ -501,8 +834,8 @@ func compressPositions(frames []model.PlayerFrame) []model.PlayerFrame {
 }
 
 // sameFrameState reports whether two player frames carry an identical state,
-// ignoring TimeMicroseconds and HoldFrames (the only fields RLE is allowed to vary
-// within a run). Velocity is a pointer so the struct can't be compared with ==.
+// ignoring T and HoldFrames (the only fields RLE is allowed to vary within a run).
+// Velocity is a pointer so the struct can't be compared with ==.
 // Floats are compared exactly: they are already rounded to 2dp at populate time, so
 // identical static frames compare equal.
 func sameFrameState(a, b *model.PlayerFrame) bool {
@@ -564,10 +897,10 @@ func finalizeShotStats(tally map[uint64]map[string]*shotStatAcc, damages []model
 		if seen[k] == nil {
 			seen[k] = map[int64]bool{}
 		}
-		if seen[k][d.TimeMicroseconds] {
+		if seen[k][d.TMs] {
 			continue
 		}
-		seen[k][d.TimeMicroseconds] = true
+		seen[k][d.TMs] = true
 		hits[k]++
 	}
 

@@ -193,3 +193,18 @@ func IsGun(w *common.Equipment) bool {
 		return false
 	}
 }
+
+// IsGroundTrackable reports whether a world weapon entity is one we show as a ground
+// item once it is dropped: any gun, any grenade, the zeus, or a knife. The c4 is left
+// out (it has its own ground path); non-weapon equipment (kevlar, nvg, health-shot)
+// never reaches GameState().Weapons(), so only the zeus and knife are pulled out of
+// the broad equipment class.
+func IsGroundTrackable(w *common.Equipment) bool {
+	if w == nil {
+		return false
+	}
+	if IsGun(w) || w.Class() == common.EqClassGrenade {
+		return true
+	}
+	return w.Type == common.EqZeus || w.Type == common.EqKnife
+}

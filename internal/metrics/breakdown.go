@@ -12,8 +12,8 @@ func multiKillHistograms(rounds []model.Round) map[uint64][6]int {
 	for _, round := range rounds {
 		perRound := map[uint64]int{}
 		for _, kill := range round.Kills {
-			if kill.Killer != 0 {
-				perRound[kill.Killer]++
+			if kill.KillerID() != 0 {
+				perRound[kill.KillerID()]++
 			}
 		}
 
@@ -52,23 +52,23 @@ func killTypeCounts(m *model.Match) map[uint64]killTypes {
 	for _, r := range m.Rounds {
 		killsByTime := map[uint64]map[int64]int{} // killer, then kill time, then count
 		for _, k := range r.Kills {
-			if k.Killer == 0 {
+			if k.KillerID() == 0 {
 				continue
 			}
 
-			c := counts[k.Killer]
+			c := counts[k.KillerID()]
 			if k.NoScope {
 				c.noScope++
 			}
 			if k.Wallbang {
 				c.wallbang++
 			}
-			counts[k.Killer] = c
+			counts[k.KillerID()] = c
 
-			if killsByTime[k.Killer] == nil {
-				killsByTime[k.Killer] = map[int64]int{}
+			if killsByTime[k.KillerID()] == nil {
+				killsByTime[k.KillerID()] = map[int64]int{}
 			}
-			killsByTime[k.Killer][k.TimeMicroseconds]++
+			killsByTime[k.KillerID()][k.TMs]++
 		}
 
 		for killer, times := range killsByTime {
@@ -108,7 +108,7 @@ func weaponStats(m *model.Match) map[uint64]map[string]model.WeaponStat {
 
 	for _, r := range m.Rounds {
 		for _, k := range r.Kills {
-			edit(k.Killer, k.Weapon, func(ws *model.WeaponStat) {
+			edit(k.KillerID(), k.Weapon, func(ws *model.WeaponStat) {
 				ws.Kills++
 				if k.Headshot {
 					ws.Headshots++
@@ -145,7 +145,7 @@ func flashMatrix(m *model.Match) []model.FlashPair {
 
 				a := counts[pair{g.Thrower, f.SteamID}]
 				a.count++
-				a.blind += f.BlindMicroseconds
+				a.blind += f.BlindMs
 				counts[pair{g.Thrower, f.SteamID}] = a
 			}
 		}
@@ -153,7 +153,7 @@ func flashMatrix(m *model.Match) []model.FlashPair {
 
 	pairs := make([]model.FlashPair, 0, len(counts))
 	for p, a := range counts {
-		pairs = append(pairs, model.FlashPair{Flasher: p.flasher, Flashed: p.flashed, Count: a.count, BlindMicroseconds: a.blind})
+		pairs = append(pairs, model.FlashPair{Flasher: p.flasher, Flashed: p.flashed, Count: a.count, BlindMs: a.blind})
 	}
 
 	sort.Slice(pairs, func(i, j int) bool {

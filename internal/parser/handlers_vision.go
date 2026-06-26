@@ -26,7 +26,7 @@ func (st *parseState) onPlayerFrames(_ events.FrameDone) {
 		return
 	}
 	cur := st.parsed.CurrentTime()
-	if cur-st.frames.lastFrameSample < frameSamplePeriod {
+	if cur-st.frames.lastFrameSample < st.framePeriod {
 		return
 	}
 	st.frames.lastFrameSample = cur
@@ -50,7 +50,7 @@ func (st *parseState) onPlayerFrames(_ events.FrameDone) {
 	if streams == nil {
 		return
 	}
-	into := (cur - st.roundStart).Microseconds()
+	into := (cur - st.roundStart).Milliseconds()
 	for _, pl := range gs.Participants().Playing() {
 		if side := sideString(pl.Team); side != "" {
 			streams.Positions = append(streams.Positions, st.playerFrame(pl, side, into))

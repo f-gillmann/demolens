@@ -53,7 +53,7 @@ func computeClutches(m *model.Match) {
 				for id := range alive[other] {
 					opp = append(opp, id)
 				}
-				starts[last] = clutchStart{side: s, opponents: len(alive[other]), startTime: k.TimeMicroseconds, opponentIDs: opp}
+				starts[last] = clutchStart{side: s, opponents: len(alive[other]), startTime: k.TMs, opponentIDs: opp}
 			}
 		}
 
@@ -72,7 +72,7 @@ func computeClutches(m *model.Match) {
 func buildClutch(r *model.Round, clutcher uint64, start clutchStart) model.Clutch {
 	kills, died := 0, false
 	for _, k := range r.Kills {
-		if k.Killer == clutcher && k.TimeMicroseconds >= start.startTime {
+		if k.KillerID() == clutcher && k.TMs >= start.startTime {
 			kills++
 		}
 		if k.Victim == clutcher {
@@ -84,12 +84,12 @@ func buildClutch(r *model.Round, clutcher uint64, start clutchStart) model.Clutc
 	opp := append([]uint64(nil), start.opponentIDs...)
 	sort.Slice(opp, func(i, j int) bool { return opp[i] < opp[j] })
 	return model.Clutch{
-		Opponents:             start.opponents,
-		Kills:                 kills,
-		Won:                   won,
-		Saved:                 !won && !died,
-		StartTimeMicroseconds: start.startTime,
-		OpponentIDs:           opp,
+		Opponents:   start.opponents,
+		Kills:       kills,
+		Won:         won,
+		Saved:       !won && !died,
+		StartMs:     start.startTime,
+		OpponentIDs: opp,
 	}
 }
 
