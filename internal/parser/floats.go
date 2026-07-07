@@ -4,7 +4,7 @@ import "math"
 
 // round2 rounds f to 2 decimals for output and clears the negative-zero sign bit
 // so the JSON shows 0 instead of -0. Output-only; never feeds a metric.
-// must stay in sync with round2 in model/match.go.
+// must stay in sync with round2 in model/encoding.go.
 func round2(f float64) float64 {
 	r := math.Round(f*100) / 100
 	if r == 0 {

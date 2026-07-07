@@ -1,31 +1,7 @@
 package model
 
-import (
-	"encoding/json"
-	"math"
-	"strconv"
-)
-
 // SteamIDList marshals each SteamID64 as a JSON string.
 type SteamIDList []uint64
-
-func (l SteamIDList) MarshalJSON() ([]byte, error) {
-	if len(l) == 0 {
-		return []byte("[]"), nil
-	}
-	out := make([]byte, 0, len(l)*20)
-	out = append(out, '[')
-	for i, id := range l {
-		if i > 0 {
-			out = append(out, ',')
-		}
-		out = append(out, '"')
-		out = strconv.AppendUint(out, id, 10)
-		out = append(out, '"')
-	}
-	out = append(out, ']')
-	return out, nil
-}
 
 type Match struct {
 	FileHash      string   `json:"file_hash"`      // SHA-256 of the demo bytes
@@ -219,59 +195,6 @@ type PlayerFrame struct {
 	HoldFrames int
 }
 
-// MarshalJSON emits the frame as a columnar tuple ordered by PositionFields, with
-// the eight state booleans packed into the flags integer. steam_id is not a row field
-// (streams.positions is an object keyed by it). Floats are rounded to 2dp (negative
-// zero normalized) to match the rest of the export. Velocity is emitted as a 0 vector
-// when unknown.
-func (f PlayerFrame) MarshalJSON() ([]byte, error) {
-	flags := 0
-	if f.IsAlive {
-		flags |= frameFlagAlive
-	}
-	if f.IsAirborne {
-		flags |= frameFlagAirborne
-	}
-	if f.IsScoped {
-		flags |= frameFlagScoped
-	}
-	if f.IsDucking {
-		flags |= frameFlagDucking
-	}
-	if f.HasDefuseKit {
-		flags |= frameFlagHasDefuseKit
-	}
-	if f.InBuyZone {
-		flags |= frameFlagBuyZone
-	}
-	if f.IsWalking {
-		flags |= frameFlagWalking
-	}
-	if f.InBombZone {
-		flags |= frameFlagBombZone
-	}
-
-	var vx, vy, vz float64
-	if f.Velocity != nil {
-		vx, vy, vz = round2(f.Velocity.X), round2(f.Velocity.Y), round2(f.Velocity.Z)
-	}
-
-	row := []any{
-		f.TMs,
-		f.Side,
-		round2(f.Position.X), round2(f.Position.Y), round2(f.Position.Z),
-		vx, vy, vz,
-		round2(f.Yaw), round2(f.Pitch),
-		f.Health, f.Armor, f.Money,
-		flags,
-		f.ActiveWeapon,
-		f.Place,
-		round2(f.Stamina), round2(f.DuckAmount),
-		f.HoldFrames,
-	}
-	return json.Marshal(row)
-}
-
 // Shot is one weapon-fire event plus the shooter's geometry.
 type Shot struct {
 	TMs      int64    `json:"t_ms"` // since round start, ms
@@ -426,32 +349,6 @@ type Position struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
 	Z float64 `json:"z"`
-}
-
-// round2 rounds f to 2 decimals and clears the negative-zero sign bit so the
-// JSON shows 0 instead of -0. Output-only; never feeds a metric computation.
-// must stay in sync with round2 in internal/parser/floats.go.
-func round2(f float64) float64 {
-	r := math.Round(f*100) / 100
-	if r == 0 {
-		r = 0
-	}
-	return r
-}
-
-// MarshalJSON rounds X/Y/Z to 2 decimals for output. Because this runs only at
-// encode time, the in-memory full-precision values still feed all geometry and
-// metric math; this rounds every exported position in one place.
-func (p Position) MarshalJSON() ([]byte, error) {
-	out := make([]byte, 0, 48)
-	out = append(out, `{"x":`...)
-	out = strconv.AppendFloat(out, round2(p.X), 'f', -1, 64)
-	out = append(out, `,"y":`...)
-	out = strconv.AppendFloat(out, round2(p.Y), 'f', -1, 64)
-	out = append(out, `,"z":`...)
-	out = strconv.AppendFloat(out, round2(p.Z), 'f', -1, 64)
-	out = append(out, '}')
-	return out, nil
 }
 
 type AlivePlayer struct {

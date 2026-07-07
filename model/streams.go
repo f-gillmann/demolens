@@ -1,11 +1,5 @@
 package model
 
-import (
-	"encoding/json"
-	"sort"
-	"strconv"
-)
-
 // RoundStreams is the opt-in heavy detail for a round. Presence of each sub-array is
 // governed by meta.output.streams; a nil RoundStreams means no stream was on.
 type RoundStreams struct {
@@ -23,40 +17,6 @@ type RoundStreams struct {
 // per row). So a 17-char steam_id appears once per player per round, not once per
 // sample. Keys are sorted ascending for deterministic output.
 type PositionStream []PlayerFrame
-
-func (ps PositionStream) MarshalJSON() ([]byte, error) {
-	if len(ps) == 0 {
-		return []byte("{}"), nil
-	}
-	// group frames by steam_id, preserving the incoming (time-sorted) order per player.
-	byID := map[uint64][]PlayerFrame{}
-	order := make([]uint64, 0)
-	for _, f := range ps {
-		if _, ok := byID[f.SteamID]; !ok {
-			order = append(order, f.SteamID)
-		}
-		byID[f.SteamID] = append(byID[f.SteamID], f)
-	}
-	sort.Slice(order, func(i, j int) bool { return order[i] < order[j] })
-
-	out := make([]byte, 0, len(ps)*48)
-	out = append(out, '{')
-	for i, id := range order {
-		if i > 0 {
-			out = append(out, ',')
-		}
-		out = append(out, '"')
-		out = strconv.AppendUint(out, id, 10)
-		out = append(out, '"', ':')
-		rows, err := json.Marshal(byID[id])
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, rows...)
-	}
-	out = append(out, '}')
-	return out, nil
-}
 
 // GrenadePath is one grenade's flight trajectory plus bounce points. It joins back
 // to round.grenades.<bucket>[].grenade_id via grenade_id.
@@ -99,17 +59,6 @@ type GroundItemFrame struct {
 	TMs        int64
 	Position   Position
 	HoldFrames int
-}
-
-// MarshalJSON emits the frame as a columnar tuple ordered by GroundItemPositionFields.
-// Floats are rounded to 2dp (negative zero normalized) to match the rest of the export.
-func (f GroundItemFrame) MarshalJSON() ([]byte, error) {
-	row := []any{
-		f.TMs,
-		round2(f.Position.X), round2(f.Position.Y), round2(f.Position.Z),
-		f.HoldFrames,
-	}
-	return json.Marshal(row)
 }
 
 // DroppedItem is one item-on-the-ground stint: it lies on the ground from
