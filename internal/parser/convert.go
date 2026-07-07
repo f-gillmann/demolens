@@ -261,7 +261,23 @@ func (st *parseState) loadoutWeapons(weapons map[common.EquipmentType]*heldItem,
 			PrevOwner:     st.weaponPrevOwner(a.w),
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	// Total-order tie-break so the map-built order is deterministic.
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		if a.Value != b.Value {
+			return a.Value > b.Value
+		}
+		if a.Count != b.Count {
+			return a.Count > b.Count
+		}
+		if a.OriginalOwner != b.OriginalOwner {
+			return a.OriginalOwner < b.OriginalOwner
+		}
+		return a.PrevOwner < b.PrevOwner
+	})
 	return out
 }
 
@@ -275,7 +291,17 @@ func loadoutGrenades(grenades map[common.EquipmentType]*heldItem) []model.Loadou
 			Value: csdata.UtilityPrice[t] * a.count,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	// Total-order tie-break so the map-built order is deterministic.
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		if a.Value != b.Value {
+			return a.Value > b.Value
+		}
+		return a.Count > b.Count
+	})
 	return out
 }
 
@@ -293,7 +319,17 @@ func loadoutEquipment(equipment map[common.EquipmentType]*heldItem, hasDefuseKit
 	if hasDefuseKit {
 		out = append(out, model.LoadoutItem{Name: common.EqDefuseKit.String(), Count: 1, Value: 0})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	// Total-order tie-break so the map-built order is deterministic.
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		if a.Value != b.Value {
+			return a.Value > b.Value
+		}
+		return a.Count > b.Count
+	})
 	return out
 }
 
