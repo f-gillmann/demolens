@@ -63,6 +63,82 @@ func grenadeInventoryValue(p *common.Player) int {
 	return value
 }
 
+// toFlash projects the working grenade onto the typed flash bucket entry.
+func (g *parseGrenade) toFlash() model.GrenadeFlash {
+	sortFlashed(g.flashed)
+	return model.GrenadeFlash{
+		GrenadeID:        g.grenadeID,
+		Thrower:          g.thrower,
+		Side:             g.side,
+		Type:             "flash",
+		ThrowMs:          g.throwT,
+		DetonateMs:       g.detonateT,
+		FlightMs:         g.flightMs,
+		ThrowPosition:    g.throwPosition,
+		DetonatePosition: g.detonatePosition,
+		EnemiesFlashed:   g.enemiesFlashed,
+		TeammatesFlashed: g.teammatesFlashed,
+		Flashed:          g.flashed,
+	}
+}
+
+// toHE projects the working grenade onto the typed HE bucket entry.
+func (g *parseGrenade) toHE() model.GrenadeHE {
+	sortVictims(g.victims)
+	return model.GrenadeHE{
+		GrenadeID:        g.grenadeID,
+		Thrower:          g.thrower,
+		Side:             g.side,
+		Type:             "he",
+		ThrowMs:          g.throwT,
+		DetonateMs:       g.detonateT,
+		FlightMs:         g.flightMs,
+		ThrowPosition:    g.throwPosition,
+		DetonatePosition: g.detonatePosition,
+		DamageDealt:      g.damageDealt,
+		TeamDamage:       g.teamDamage,
+		Victims:          g.victims,
+	}
+}
+
+// toMolotov projects the working grenade onto the typed molotov bucket entry. The
+// type is preserved as "molotov" or "incendiary" (the bucket folds both).
+func (g *parseGrenade) toMolotov() model.GrenadeMolotov {
+	sortVictims(g.victims)
+	return model.GrenadeMolotov{
+		GrenadeID:        g.grenadeID,
+		Thrower:          g.thrower,
+		Side:             g.side,
+		Type:             g.gtype,
+		ThrowMs:          g.throwT,
+		DetonateMs:       g.detonateT,
+		ExpireMs:         g.expireT,
+		FlightMs:         g.flightMs,
+		ThrowPosition:    g.throwPosition,
+		DetonatePosition: g.detonatePosition,
+		DamageDealt:      g.damageDealt,
+		TeamDamage:       g.teamDamage,
+		Victims:          g.victims,
+		FireCells:        g.fireCells,
+	}
+}
+
+// toBasic projects the working grenade onto the typed smoke/decoy bucket entry.
+func (g *parseGrenade) toBasic() model.GrenadeBasic {
+	return model.GrenadeBasic{
+		GrenadeID:        g.grenadeID,
+		Thrower:          g.thrower,
+		Side:             g.side,
+		Type:             g.gtype,
+		ThrowMs:          g.throwT,
+		DetonateMs:       g.detonateT,
+		ExpireMs:         g.expireT,
+		FlightMs:         g.flightMs,
+		ThrowPosition:    g.throwPosition,
+		DetonatePosition: g.detonatePosition,
+	}
+}
+
 // weaponValue is the dollar value to report for a held gun. A bought gun reads
 // its WeaponPrice; picked-up guns and the free spawn pistol read 0. holder is
 // the current owner's SteamID64.
