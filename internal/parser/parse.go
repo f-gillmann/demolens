@@ -26,6 +26,7 @@ type Options struct {
 	Tier         string      // optional preset: core / detail / full. empty means full.
 	MapsDir      string      // .tri mesh dir for TTD los. empty disables TTD
 	Calibration  Calibration // aim-stat thresholds, zero fields fall back to defaults
+	AimDebugPath string      // when set, write per-frame aim diagnostic CSVs to <path>.cands.csv / <path>.dmg.csv / <path>.legend.csv. empty disables.
 }
 
 // stream names exactly as they appear in meta.output.streams, sorted.

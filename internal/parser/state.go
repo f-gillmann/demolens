@@ -46,9 +46,12 @@ type counterStrafeAcc struct {
 // pv is an alive player's eye position and view direction, pulled once per frame
 // so the sighting pair loop reads it instead of re-querying the entity.
 type pv struct {
-	id        uint64
-	team      common.Team
-	eye, view r3.Vector
+	id          uint64
+	team        common.Team
+	eye, view   r3.Vector
+	feet        r3.Vector // feet/origin position, the body-column anchor for losAnyPartFeet
+	blindRemain float64   // seconds of flash blindness left this frame, 0 if not blind
+	blindFrac   float64   // fraction of the current flash's duration still remaining this frame, 0 if no active flash
 }
 
 // cand is a frustum-passing pair whose expensive los/smoke check is deferred to
@@ -56,7 +59,15 @@ type pv struct {
 type cand struct {
 	en         *engagement
 	sEye, eEye r3.Vector
-	vis        bool
+	eFeet      r3.Vector // enemy feet/origin, the body-column anchor for the losAnyPartFeet vis test
+	sView      r3.Vector // shooter view at this frame, the crosshair peek anchor
+	sID, vID   uint64    // shooter / victim steam ids, for the aim-debug dump only
+	sBlind     float64   // shooter's remaining flash blindness (seconds) this frame, for the aim-debug dump only
+	sBlindFrac float64   // fraction of the shooter's current flash still remaining this frame, gates the sighting clocks
+	angOff     float64   // degrees between shooter view and dir-to-victim, for the per-metric fov gate
+	vis        bool      // dense any-part losAnyPartFeet visibility, minus smoke (crosshair detection)
+	visN       bool      // narrow 9-ray losClear visibility, minus smoke (TTD detection)
+	visTorso   bool      // strict torso-column losTorso visibility, minus smoke; aim-debug probe only, filled only when AimDebugPath set
 }
 
 // parseGrenade is the per-round working accumulator for one thrown grenade. It
@@ -158,6 +169,8 @@ type parseState struct {
 	grenades grenadeState
 	econ     economyState
 	frames   frameState
+
+	aimDump *aimDumper // raw aim-calibration CSV dumper, non-nil only when opts.AimDebugPath is set
 }
 
 // aimState holds the per-player aim-calibration accumulators (spray, counter-
@@ -187,6 +200,7 @@ type visionState struct {
 	engagements  map[[2]uint64]*engagement // (shooter,enemy) sighting state, wiped each round
 	live         []pv                      // alive players' eye+view, rebuilt per frame
 	cands        []cand                    // frustum-passing pairs deferred to the parallel los pass
+	byID         map[uint64]*common.Player // alive players this frame, id->player, for the aim-debug spotted lookup; nil unless AimDebugPath set
 }
 
 // grenadeState holds the per-round thrown-grenade accumulators, wiped each round.
@@ -221,7 +235,7 @@ type frameState struct {
 
 // newParseState builds the empty per-run state with every accumulator map ready.
 func newParseState(parsed dem.Parser, opts Options, match *model.Match) *parseState {
-	return &parseState{
+	st := &parseState{
 		parsed:           parsed,
 		opts:             opts,
 		cal:              opts.Calibration.withDefaults(),
@@ -276,6 +290,12 @@ func newParseState(parsed dem.Parser, opts Options, match *model.Match) *parseSt
 			lastActiveWeapon: map[uint64]string{},
 		},
 	}
+	// allocate the dumper (files open lazily on first write) only when enabled.
+	if opts.AimDebugPath != "" {
+		st.aimDump = newAimDumper(opts.AimDebugPath)
+		st.vision.byID = map[uint64]*common.Player{}
+	}
+	return st
 }
 
 // ensureStreams lazily allocates the round's RoundStreams holder so a stream

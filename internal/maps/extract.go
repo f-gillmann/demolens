@@ -132,11 +132,22 @@ func trisFromGLB(path string) ([][9]float32, error) {
 
 	var tris [][9]float32
 	for _, m := range doc.Meshes {
-		// los mesh: drop groups that don't stop vision (clip volumes, skybox shell,
-		// see-through chainlink). glass stays: CS2 windows start solid and we don't
-		// track breaks, so opaque is the safe default.
-		if name := strings.ToLower(m.Name); strings.Contains(name, "clip") ||
-			strings.Contains(name, "chainlink") || strings.Contains(name, "sky") {
+		// los mesh: drop surface groups that don't stop vision. besides clip volumes
+		// and the skybox shell, that means every see-through class: chainlink, metal
+		// grates/vents, glass/windows (you see an enemy through them), and anything
+		// flagged passbullets (bullets and sight pass). a too-narrow name filter here
+		// bakes these as solid walls and makes the sighting clock fire late.
+		seeThrough := []string{"clip", "sky", "chainlink", "passbullets",
+			"grate", "vent", "glass", "window"}
+		name := strings.ToLower(m.Name)
+		skip := false
+		for _, kw := range seeThrough {
+			if strings.Contains(name, kw) {
+				skip = true
+				break
+			}
+		}
+		if skip {
 			continue
 		}
 

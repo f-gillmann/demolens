@@ -283,9 +283,8 @@ type Shot struct {
 	// RecoilIndex is the engine recoil index: the shot number into the current
 	// spray. Map it against the shipped players[].spray_patterns table rather than
 	// reimplementing recoil math. NOTE: spray_patterns are base/pattern-space bytes
-	// that match Leetify's reference weaponX/weaponY table byte-for-byte; they are
-	// NOT real GOTV recoil (real recoil from CMsgTEFireBullets is ~2x and lives in a
-	// different space).
+	// from the weaponX/weaponY recoil table; they are NOT real GOTV recoil (real
+	// recoil from CMsgTEFireBullets is ~2x and lives in a different space).
 	RecoilIndex float64 `json:"recoil_index"`
 }
 

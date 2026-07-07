@@ -50,6 +50,10 @@ func (st *parseState) finalizeMatch() {
 	st.finalizeTTD()
 	st.finalizeCrosshair()
 	st.finalizePlayers()
+
+	if st.aimDump != nil {
+		_ = st.aimDump.close()
+	}
 }
 
 // finalizeOutputMeta records how this document was produced: which tier/streams
@@ -206,24 +210,29 @@ func (st *parseState) finalizeSprayDeviation() {
 }
 
 // finalizeTTD reduces each player's raw time-to-damage samples into the reported
-// value via the adaptive trim/clamp.
+// value: drop the trigger-discipline cutoff, then take the calibrated percentile.
 func (st *parseState) finalizeTTD() {
 	for id, samples := range st.aim.ttdSamples {
 		if pl := st.players[id]; pl != nil && len(samples) > 0 {
-			pl.Stats.TimeToDamage = adaptiveTTD(samples, st.cal.TTDOutlierFactor, st.cal.TTDClampMs)
+			pl.Stats.TimeToDamage = ttdPercentile(samples, st.cal.TTDExcludeMs, st.cal.TTDPercentile)
 			pl.TimeToDamageSamples = len(samples)
+			if st.opts.AimDebugPath != "" {
+				pl.TimeToDamageRaw = append([]float64(nil), samples...)
+			}
 		}
 	}
 }
 
-// finalizeCrosshair reduces each player's crosshair-move samples into their median
-// placement.
+// finalizeCrosshair reduces each player's crosshair-move samples into their reported
+// placement via the low-winsor mean.
 func (st *parseState) finalizeCrosshair() {
 	for id, samples := range st.aim.crosshair {
 		if pl := st.players[id]; pl != nil && len(samples) > 0 {
-			sort.Float64s(samples)
-			pl.Stats.CrosshairPlacement = median(samples)
+			pl.Stats.CrosshairPlacement = lowinsorMean(samples, st.cal.CrosshairWinsorPct)
 			pl.CrosshairSamples = len(samples)
+			if st.opts.AimDebugPath != "" {
+				pl.CrosshairRaw = append([]float64(nil), samples...)
+			}
 		}
 	}
 }
@@ -300,7 +309,7 @@ func buildDuelMatrix(rounds []model.Round, players map[uint64]*model.Player, ttd
 			duel.Weapons = pair.weapons
 		}
 		if s := ttd[k]; len(s) > 0 {
-			duel.TimeToDamage = adaptiveTTD(s, cal.TTDOutlierFactor, cal.TTDClampMs)
+			duel.TimeToDamage = ttdPercentile(s, cal.TTDExcludeMs, cal.TTDPercentile)
 		}
 		duels = append(duels, duel)
 	}

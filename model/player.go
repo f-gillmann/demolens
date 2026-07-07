@@ -17,7 +17,7 @@ type PlayerStats struct {
 	// mesh-gated (line of sight): dropped when no map mesh is loaded.
 	SpottedAccuracy    float64 `json:"spotted_accuracy_pct,omitempty"` // hits / shots, enemy in view
 	SprayAccuracy      float64 `json:"spray_accuracy_pct,omitempty"`   // share of spray bullets that hit
-	TimeToDamage       float64 `json:"time_to_damage_ms,omitempty"`    // avg ms, seeing an enemy to first damage
+	TimeToDamage       float64 `json:"time_to_damage_ms,omitempty"`    // median ms, seeing an enemy to first damage
 	CrosshairPlacement float64 `json:"crosshair_placement"`            // median deg moved from sighting to hit
 	Rating1            float64 `json:"hltv_rating_1"`
 	Rating2            float64 `json:"hltv_rating_2"` // 2.0, approximate
@@ -49,16 +49,21 @@ type Player struct {
 
 	// Raw counts that feed the derived stats (kept top-level, directly tallied).
 	// The omitempty fields below need a map mesh for line of sight and drop when none is loaded.
-	SpottedShots             int `json:"spotted_shots,omitempty"`          // spotted-accuracy denominator
-	SpottedHits              int `json:"spotted_hits,omitempty"`           // spotted-accuracy numerator
-	TimeToDamageSamples      int `json:"time_to_damage_samples,omitempty"` // engagements measured. low means noisy
-	CrosshairSamples         int `json:"crosshair_samples"`                // low means noisy
-	TradeKillOpportunities   int `json:"trade_kill_opportunities"`
-	TradeKillAttempts        int `json:"trade_kill_attempts"`
-	TradeKills               int `json:"trade_kills"`
-	TradedDeathOpportunities int `json:"traded_death_opportunities"`
-	TradedDeathAttempts      int `json:"traded_death_attempts"`
-	TradedDeaths             int `json:"traded_deaths"`
+	SpottedShots        int `json:"spotted_shots,omitempty"`          // spotted-accuracy denominator
+	SpottedHits         int `json:"spotted_hits,omitempty"`           // spotted-accuracy numerator
+	TimeToDamageSamples int `json:"time_to_damage_samples,omitempty"` // engagements measured. low means noisy
+	CrosshairSamples    int `json:"crosshair_samples"`                // low means noisy
+
+	// raw per-engagement samples, only emitted with the aim-debug option. used by the
+	// offline calibration sweep; omitted (nil) in normal output.
+	TimeToDamageRaw          []float64 `json:"time_to_damage_raw,omitempty"` // raw ms samples, pre-reduction (no exclude/clamp)
+	CrosshairRaw             []float64 `json:"crosshair_raw,omitempty"`      // raw deg samples, pre-median
+	TradeKillOpportunities   int       `json:"trade_kill_opportunities"`
+	TradeKillAttempts        int       `json:"trade_kill_attempts"`
+	TradeKills               int       `json:"trade_kills"`
+	TradedDeathOpportunities int       `json:"traded_death_opportunities"`
+	TradedDeathAttempts      int       `json:"traded_death_attempts"`
+	TradedDeaths             int       `json:"traded_deaths"`
 
 	NoScopeKills    int `json:"no_scope_kills"`
 	WallbangKills   int `json:"wallbang_kills"`

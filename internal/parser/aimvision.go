@@ -8,16 +8,29 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 )
 
-// engagement is per (shooter, enemy) state for crosshair placement and TTD; it resets at round start only.
+// engagement is per (shooter, enemy) state for crosshair placement and TTD; it resets
+// at round start only. The two metrics run independent sighting machines: their
+// calibrated los, fov, gap and debounce differ, so a shared "first seen" event would
+// pull one or the other off its optimum.
 type engagement struct {
-	crosshairInFrustum bool          // crosshair: enemy currently inside the appearance cone
-	crosshairPending   bool          // crosshair: a placement sample is pending its closing hit
-	appearView         r3.Vector     // shooter's view at the moment the enemy hit the cone
-	ttdRunning         bool          // TTD clock running
-	consumed           bool          // already produced a TTD sample this sighting
-	visSince           time.Duration // start of the current unbroken visibility window, 0 if not visible
-	seeTime            time.Duration // first seen this sighting
-	lastSeen           time.Duration // last frame seen, bridges brief look-aways
+	// TTD sighting: dense LOS (losAnyPart), fov TTDFovDeg, gap TTDGapMs, debounce TTDDebounceMs.
+	ttdVisSince time.Duration
+	ttdSeeTime  time.Duration
+	ttdLastSeen time.Duration
+	ttdRunning  bool
+	ttdConsumed bool
+	// crosshair sighting: dense LOS (losAnyPart), fov CrosshairFovDeg, gap CrosshairGapMs,
+	// debounce CrosshairDebounceMs. appearView re-anchors at each fresh visible window (peek).
+	chVisSince   time.Duration
+	chLastSeen   time.Duration
+	chRunning    bool
+	chConsumed   bool
+	chArmed      bool
+	chAppearView r3.Vector
+	// shared: last frame this pair was seen with a clear (losClear) unsmoked sightline.
+	// Feeds only the recently-seen window in seesTarget (counter-strafe / spotted), not
+	// the two sighting machines above.
+	lastSeen time.Duration
 }
 
 // hitNear binary-searches the chronological hit-time slice for any hit within
@@ -36,45 +49,64 @@ func hitNear(hits []int64, t, windowMicros int64) bool {
 	return lo < len(hits) && hits[lo] <= t+windowMicros
 }
 
-// median of an already-sorted slice. TTD and crosshair placement aggregate by
-// median to shrug off outliers.
-func median(sorted []float64) float64 {
+// percentileInterp returns the linear-interpolated pct-th percentile (pct in 0..100)
+// of an already-sorted slice, clamping the fractional index to the slice bounds.
+func percentileInterp(sorted []float64, pct float64) float64 {
 	n := len(sorted)
 	if n == 0 {
 		return 0
 	}
-	if n%2 == 1 {
-		return sorted[n/2]
+	i := pct / 100 * float64(n-1)
+	if i < 0 {
+		i = 0
 	}
-	return (sorted[n/2-1] + sorted[n/2]) / 2
+	lo := int(i)
+	hi := lo + 1
+	if hi > n-1 {
+		hi = n - 1
+	}
+	return sorted[lo] + (sorted[hi]-sorted[lo])*(i-float64(lo))
 }
 
-// adaptiveTTD means a player's time-to-damage after dropping their own outliers (over factor x median) and capping the rest.
-func adaptiveTTD(samples []float64, factor, capMs float64) float64 {
-	sorted := append([]float64(nil), samples...)
-	sort.Float64s(sorted)
-	med := median(sorted)
-	limit := factor * med
-
-	sum, n := 0.0, 0
+// ttdPercentile drops trigger-discipline samples at or above excludeMs, then returns
+// the pct-th percentile time-to-damage of what's left. The floor is applied earlier,
+// at sample time.
+func ttdPercentile(samples []float64, excludeMs, pct float64) float64 {
+	kept := make([]float64, 0, len(samples))
 	for _, v := range samples {
-		if v > limit {
-			continue // their own trigger-discipline outlier
+		if v < excludeMs {
+			kept = append(kept, v)
 		}
-		if v > capMs {
-			v = capMs
+	}
+	if len(kept) == 0 {
+		return 0
+	}
+	sort.Float64s(kept)
+	return percentileInterp(kept, pct)
+}
+
+// lowinsorMean clamps every sample below the pct-th percentile up to that threshold,
+// then returns the mean. Unlike a winsor it never drops a sample; it just keeps the
+// lucky pre-aimed outliers from dragging the crosshair placement down.
+func lowinsorMean(samples []float64, pct float64) float64 {
+	n := len(samples)
+	if n == 0 {
+		return 0
+	}
+	s := append([]float64(nil), samples...)
+	sort.Float64s(s)
+	idx := int(pct / 100 * float64(n-1))
+	if idx > n-1 {
+		idx = n - 1
+	}
+	lo := s[idx]
+	var sum float64
+	for _, v := range samples {
+		if v < lo {
+			v = lo
 		}
 		sum += v
-		n++
 	}
-
-	if n == 0 { // everything got flagged, can't happen with factor>1, just mean them
-		for _, v := range samples {
-			sum += v
-		}
-		n = len(samples)
-	}
-
 	return sum / float64(n)
 }
 

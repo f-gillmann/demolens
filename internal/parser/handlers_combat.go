@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"strconv"
+
 	"github.com/f-gillmann/demolens/v2/internal/csdata"
 	"github.com/f-gillmann/demolens/v2/model"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
@@ -273,10 +275,51 @@ func (st *parseState) roundSide(id uint64) string {
 	return ""
 }
 
+// hitGroupName maps a demoinfocs HitGroup enum to a stable name for the aim-debug
+// dump. events.HitGroup is a bare byte with no String method in v5, so map it here.
+func hitGroupName(g events.HitGroup) string {
+	switch g {
+	case events.HitGroupGeneric:
+		return "generic"
+	case events.HitGroupHead:
+		return "head"
+	case events.HitGroupChest:
+		return "chest"
+	case events.HitGroupStomach:
+		return "stomach"
+	case events.HitGroupLeftArm:
+		return "left_arm"
+	case events.HitGroupRightArm:
+		return "right_arm"
+	case events.HitGroupLeftLeg:
+		return "left_leg"
+	case events.HitGroupRightLeg:
+		return "right_leg"
+	case events.HitGroupNeck:
+		return "neck"
+	case events.HitGroupGear:
+		return "gear"
+	default:
+		return strconv.Itoa(int(g))
+	}
+}
+
 func (st *parseState) onPlayerHurt(hurt events.PlayerHurt) {
 	if st.parsed.GameState().IsWarmupPeriod() {
 		return
 	}
+
+	// aim-debug dump: raw damage row, captured before the clamp logic below. Off by
+	// default; only runs when the option allocated st.aimDump.
+	if st.aimDump != nil && st.roundLive && st.pending != nil && hurt.Attacker != nil && hurt.Player != nil {
+		weaponName := ""
+		if hurt.Weapon != nil {
+			weaponName = hurt.Weapon.String()
+		}
+		st.aimDump.dmg(st.pending.Number, st.roundMs(), st.parsed.GameState().IngameTick(), hurt.Attacker.SteamID64, hurt.Player.SteamID64,
+			weaponName, csdata.IsGun(hurt.Weapon), hitGroupName(hurt.HitGroup), hurt.HealthDamageTaken)
+	}
+
 	if hurt.Attacker == nil || hurt.Attacker.SteamID64 == 0 {
 		return
 	}
@@ -308,14 +351,33 @@ func (st *parseState) onPlayerHurt(hurt events.PlayerHurt) {
 	}
 }
 
-// sampleAimOnHit feeds the aim-duel calibration off a gun hit on an enemy
-// (spotted-accuracy numerator, rifle hit ticks, crosshair + TTD samples). Gun-on-
-// enemy only; nade/molotov/zeus damage isn't an aim duel and must not consume here.
+// sampleAimOnHit feeds the aim-duel calibration off a hit on an enemy. TTD closes on
+// the first damage of any weapon (a nade or fire tick still stops the reaction clock);
+// the gun-only block (spotted-accuracy numerator, rifle hit ticks, crosshair) skips
+// non-gun damage because that isn't an aim duel.
 func (st *parseState) sampleAimOnHit(hurt events.PlayerHurt) {
-	if !st.roundLive || !csdata.IsGun(hurt.Weapon) || hurt.Player == nil || hurt.Player.Team == hurt.Attacker.Team {
+	if !st.roundLive || hurt.Player == nil || hurt.Player.Team == hurt.Attacker.Team {
 		return
 	}
 	id := hurt.Attacker.SteamID64
+	vid := hurt.Player.SteamID64
+	eng := st.vision.engagements[[2]uint64{id, vid}]
+
+	// TTD = first-saw to this hit, any weapon. floor drops pre-aim now; the
+	// trigger-discipline cutoff and percentile land at finalize.
+	if eng != nil && eng.ttdRunning {
+		eng.ttdRunning, eng.ttdConsumed = false, true
+		ttd := float64((st.parsed.CurrentTime() - eng.ttdSeeTime).Microseconds()) / 1000
+		if ttd >= st.cal.TTDFloorMs {
+			st.aim.ttdSamples[id] = append(st.aim.ttdSamples[id], ttd)
+			st.aim.ttdByVictim[[2]uint64{id, vid}] = append(st.aim.ttdByVictim[[2]uint64{id, vid}], ttd)
+		}
+	}
+
+	// gun-on-enemy only past here: nade/molotov/zeus damage isn't an aim duel.
+	if !csdata.IsGun(hurt.Weapon) {
+		return
+	}
 
 	// spotted-accuracy numerator: same gate as the denominator (drops wallbangs
 	// and through-smoke hits).
@@ -329,24 +391,11 @@ func (st *parseState) sampleAimOnHit(hurt events.PlayerHurt) {
 		st.aim.hitTimes[id] = append(st.aim.hitTimes[id], st.parsed.CurrentTime().Microseconds())
 	}
 
-	// first gun damage closes the sighting: emit the crosshair + TTD samples.
-	eng := st.vision.engagements[[2]uint64{id, hurt.Player.SteamID64}]
-	if eng == nil {
-		return
-	}
-	if eng.crosshairPending { // crosshair = view move from appearance to this hit
-		eng.crosshairPending = false
-		st.aim.crosshair[id] = append(st.aim.crosshair[id], crosshairDelta(eng.appearView, hurt.Attacker))
-	}
-	if eng.ttdRunning { // TTD = first-saw to this hit
-		eng.ttdRunning, eng.consumed = false, true
-		ttd := float64((st.parsed.CurrentTime() - eng.seeTime).Microseconds()) / 1000
-		// keep the raw value; outliers get clamped/trimmed at finalize (adaptiveTTD).
-		if ttd >= st.cal.TTDFloorMs {
-			st.aim.ttdSamples[id] = append(st.aim.ttdSamples[id], ttd)
-			vk := [2]uint64{id, hurt.Player.SteamID64}
-			st.aim.ttdByVictim[vk] = append(st.aim.ttdByVictim[vk], ttd)
-		}
+	// first gun hit closes the crosshair sighting: view move from the peek anchor to
+	// where the shooter is aiming now.
+	if eng != nil && eng.chRunning && eng.chArmed {
+		eng.chRunning, eng.chConsumed, eng.chArmed = false, true, false
+		st.aim.crosshair[id] = append(st.aim.crosshair[id], crosshairDelta(eng.chAppearView, hurt.Attacker))
 	}
 }
 

@@ -80,19 +80,25 @@ func analyzeCmd() *cobra.Command {
 	cmd.Flags().Float64Var(&opts.PositionsHz, "positions-hz", 4, "positions stream sample rate in Hz")
 	calibration := &opts.Calibration
 	cmd.Flags().StringVar(&opts.MapsDir, "maps-dir", "tris", "dir of .tri map meshes for time-to-damage line of sight")
-	cmd.Flags().Float64Var(&calibration.CrosshairConeDeg, "crosshair-cone", calibration.CrosshairConeDeg, "crosshair appearance cone (deg)")
 	cmd.Flags().Float64Var(&calibration.TTDFovDeg, "ttd-fov", calibration.TTDFovDeg, "time-to-damage 'saw enemy' frustum half-FOV (deg)")
 	cmd.Flags().Float64Var(&calibration.TTDGapMs, "ttd-gap", calibration.TTDGapMs, "time-to-damage sighting reset gap / re-peek lockout (ms)")
 	cmd.Flags().Float64Var(&calibration.TTDDebounceMs, "ttd-debounce", calibration.TTDDebounceMs, "time-to-damage min continuous-visibility before the clock starts (ms)")
 	cmd.Flags().Float64Var(&calibration.TTDFloorMs, "ttd-floor", calibration.TTDFloorMs, "time-to-damage min sample (ms)")
-	cmd.Flags().Float64Var(&calibration.TTDClampMs, "ttd-clamp", calibration.TTDClampMs, "time-to-damage kept-sample cap (ms)")
-	cmd.Flags().Float64Var(&calibration.TTDOutlierFactor, "ttd-outlier", calibration.TTDOutlierFactor, "time-to-damage drop samples over N x player median")
+	cmd.Flags().Float64Var(&calibration.TTDExcludeMs, "ttd-exclude", calibration.TTDExcludeMs, "time-to-damage trigger-discipline cutoff: drop samples at or above this (ms)")
+	cmd.Flags().Float64Var(&calibration.TTDPercentile, "ttd-percentile", calibration.TTDPercentile, "time-to-damage reported percentile of kept samples (50=median)")
+	cmd.Flags().Float64Var(&calibration.CrosshairFovDeg, "crosshair-fov", calibration.CrosshairFovDeg, "crosshair-placement 'saw enemy' frustum half-FOV (deg)")
+	cmd.Flags().Float64Var(&calibration.CrosshairGapMs, "crosshair-gap", calibration.CrosshairGapMs, "crosshair-placement sighting reset gap (ms)")
+	cmd.Flags().Float64Var(&calibration.CrosshairDebounceMs, "crosshair-debounce", calibration.CrosshairDebounceMs, "crosshair-placement min continuous-visibility before the sighting commits (ms)")
+	cmd.Flags().Float64Var(&calibration.CrosshairPeekGapMs, "crosshair-peek-gap", calibration.CrosshairPeekGapMs, "crosshair-placement appearance-view re-anchor gap: re-snapshot when a fresh window opens after this unseen gap (ms)")
+	cmd.Flags().Float64Var(&calibration.CrosshairWinsorPct, "crosshair-winsor", calibration.CrosshairWinsorPct, "crosshair-placement low-winsor percentile: clamp samples below this up to it, then mean")
 	cmd.Flags().Float64Var(&calibration.CSConeDeg, "cs-cone", calibration.CSConeDeg, "counter-strafe / spray 'enemy in vision' frustum half-FOV (deg)")
 	cmd.Flags().Float64Var(&calibration.CSRatio, "cs-ratio", calibration.CSRatio, "counter-strafe good-shot speed ratio")
 	cmd.Flags().Float64Var(&calibration.CSRecentMs, "cs-recent", calibration.CSRecentMs, "counter-strafe / spotted recently-seen window (ms)")
 	cmd.Flags().Float64Var(&calibration.SprayConeDeg, "spray-cone", calibration.SprayConeDeg, "spray 'aiming at enemy' frustum half-FOV (deg)")
 	cmd.Flags().Float64Var(&calibration.SprayHitWindowMs, "spray-hit-window", calibration.SprayHitWindowMs, "spray shot-to-impact match window (ms)")
 	cmd.Flags().Float64Var(&calibration.FlashBlindScale, "flash-scale", calibration.FlashBlindScale, "scale flash duration to effective blind time")
+	cmd.Flags().Float64Var(&calibration.FlashBlindFraction, "flash-blind-fraction", calibration.FlashBlindFraction, "sighting clocks stay paused while this fraction of the shooter's current flash duration still remains (0 = any flash time blinds)")
+	cmd.Flags().StringVar(&opts.AimDebugPath, "aim-debug-path", "", "write per-frame aim calibration CSVs to <path>.{cands,dmg,legend}.csv (debug)")
 	return cmd
 }
 
