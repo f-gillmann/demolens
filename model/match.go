@@ -430,6 +430,7 @@ type Position struct {
 
 // round2 rounds f to 2 decimals and clears the negative-zero sign bit so the
 // JSON shows 0 instead of -0. Output-only; never feeds a metric computation.
+// must stay in sync with round2 in internal/parser/floats.go.
 func round2(f float64) float64 {
 	r := math.Round(f*100) / 100
 	if r == 0 {

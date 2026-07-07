@@ -100,9 +100,6 @@ func WriteTri(path string, tris [][9]float32) (err error) {
 	return w.Flush()
 }
 
-// Triangles count, mostly handy for sanity-checking a load.
-func (m *Mesh) Triangles() int { return len(m.tris) }
-
 const epsilon = 1e-7
 
 // Moeller-Trumbore: does the segment orig+dir (t in 0..1) hit this triangle.

@@ -110,14 +110,6 @@ func (m *Mesh) Occluded(from, to r3.Vector) bool {
 	return false
 }
 
-// Bounds is the whole mesh's AABB, which is just the root node's box.
-func (m *Mesh) Bounds() (min, max r3.Vector) {
-	if len(m.nodes) == 0 {
-		return r3.Vector{}, r3.Vector{}
-	}
-	return m.nodes[0].min, m.nodes[0].max
-}
-
 // slab test of ray (orig, 1/dir) against an AABB, clamped to t in [0,1].
 func slabHit(orig, inv, lo, hi r3.Vector) bool {
 	t1 := (lo.X - orig.X) * inv.X
