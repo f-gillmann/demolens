@@ -12,12 +12,13 @@
         "planter": {
           "type": "string"
         },
-        "plant_time_microseconds": {
+        "plant_ms": {
           "type": "integer",
-          "description": "since round start"
+          "description": "since round start, ms"
         },
         "plant_position": {
-          "$ref": "#/$defs/Position"
+          "$ref": "#/$defs/Position",
+          "description": "nil until a plant completes"
         },
         "defused": {
           "type": "boolean"
@@ -25,27 +26,34 @@
         "defuser": {
           "type": "string"
         },
-        "defuse_time_microseconds": {
+        "defuse_ms": {
           "type": "integer",
-          "description": "since round start"
+          "description": "completion, since round start, ms"
         },
         "defuse_position": {
-          "$ref": "#/$defs/Position"
+          "$ref": "#/$defs/Position",
+          "description": "nil/absent when nobody defused; never a {0,0,0} sentinel"
         },
         "exploded": {
           "type": "boolean"
         },
-        "defuse_start_time_microseconds": {
+        "defuse_started_ms": {
           "type": "integer",
-          "description": "the successful defuse's start, since round start"
+          "description": "the successful defuse's start, since round start, ms"
         },
-        "defuse_has_kit": {
+        "has_kit": {
           "type": "boolean",
-          "description": "successful defuse used a kit"
+          "description": "successful defuse used a kit (same token as DefuseAttempt.has_kit)"
         },
         "defuse_attempts": {
           "items": {
             "$ref": "#/$defs/DefuseAttempt"
+          },
+          "type": "array"
+        },
+        "plant_attempts": {
+          "items": {
+            "$ref": "#/$defs/PlantAttempt"
           },
           "type": "array"
         }
@@ -53,10 +61,6 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "site",
-        "planter",
-        "plant_time_microseconds",
-        "plant_position",
         "defused",
         "exploded"
       ],
@@ -80,9 +84,9 @@
           "type": "boolean",
           "description": "round lost but the clutcher lived"
         },
-        "start_time_microseconds": {
+        "start_ms": {
           "type": "integer",
-          "description": "when the clutch began, since round start"
+          "description": "when the clutch began, since round start, ms"
         },
         "opponent_ids": {
           "items": {
@@ -160,8 +164,9 @@
     },
     "Damage": {
       "properties": {
-        "time_microseconds": {
-          "type": "integer"
+        "t_ms": {
+          "type": "integer",
+          "description": "since round start, ms"
         },
         "attacker": {
           "type": "string"
@@ -199,7 +204,7 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "time_microseconds",
+        "t_ms",
         "attacker",
         "victim",
         "health_damage",
@@ -211,9 +216,9 @@
     },
     "DefuseAttempt": {
       "properties": {
-        "time_microseconds": {
+        "t_ms": {
           "type": "integer",
-          "description": "start, since round start"
+          "description": "start, since round start, ms"
         },
         "defuser": {
           "type": "string"
@@ -229,28 +234,38 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "time_microseconds",
+        "t_ms",
         "defuser"
       ],
       "description": "DefuseAttempt is one started defuse, completed or aborted."
     },
-    "DroppedWeapon": {
+    "DroppedItem": {
       "properties": {
-        "weapon": {
+        "item": {
           "type": "string"
         },
         "class": {
           "type": "string"
         },
-        "position": {
-          "$ref": "#/$defs/Position",
-          "description": "where it lies (static; rounded via toPosition)"
+        "positions": {
+          "items": {
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 5,
+            "description": "columnar ground-item position sample, fields in order: t_ms, x, y, z, hold_frames"
+          },
+          "type": "array",
+          "description": "RLE ground-position track (GroundItemPositionFields order)"
         },
-        "dropped_at_microseconds": {
+        "dropped_at_ms": {
           "type": "integer",
-          "description": "since round start"
+          "description": "since round start, ms"
         },
-        "picked_up_at_microseconds": {
+        "is_initial": {
+          "type": "boolean",
+          "description": "spawn/round-start state (dropped_at_ms == 0), not a real mid-round drop"
+        },
+        "picked_up_at_ms": {
           "type": "integer",
           "description": "absent = still on ground at round end"
         },
@@ -275,11 +290,10 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "weapon",
-        "position",
-        "dropped_at_microseconds"
+        "item",
+        "dropped_at_ms"
       ],
-      "description": "DroppedWeapon is one gun-on-the-ground stint: it lies at Position from dropped_at until picked_up_at (absent = still down at round end)."
+      "description": "DroppedItem is one item-on-the-ground stint: it lies on the ground from dropped_at_ms until picked_up_at_ms (absent = still down at round end)."
     },
     "Duel": {
       "properties": {
@@ -298,7 +312,7 @@
         },
         "time_to_damage_ms": {
           "type": "number",
-          "description": "avg ms seeing to first damage, needs a map mesh"
+          "description": "median ms seeing to first damage, needs a map mesh"
         },
         "weapons": {
           "additionalProperties": {
@@ -328,8 +342,9 @@
         "count": {
           "type": "integer"
         },
-        "blind_microseconds": {
-          "type": "integer"
+        "blind_ms": {
+          "type": "integer",
+          "description": "total blind time on this victim, ms"
         }
       },
       "additionalProperties": false,
@@ -338,7 +353,7 @@
         "flasher",
         "flashed",
         "count",
-        "blind_microseconds"
+        "blind_ms"
       ],
       "description": "FlashPair holds how often and how long a flasher blinded one victim."
     },
@@ -351,8 +366,9 @@
           "type": "string",
           "description": "victim's side"
         },
-        "blind_microseconds": {
-          "type": "integer"
+        "blind_ms": {
+          "type": "integer",
+          "description": "ms"
         },
         "max_alpha": {
           "type": "number",
@@ -364,7 +380,7 @@
       "required": [
         "steam_id",
         "side",
-        "blind_microseconds"
+        "blind_ms"
       ],
       "description": "FlashedPlayer is one player blinded by a flashbang, with how long."
     },
@@ -383,16 +399,16 @@
           "type": "string",
           "description": "\"smoke\" or \"decoy\""
         },
-        "throw_time_microseconds": {
+        "throw_ms": {
           "type": "integer"
         },
-        "detonate_time_microseconds": {
+        "detonate_ms": {
           "type": "integer"
         },
-        "expire_time_microseconds": {
+        "expire_ms": {
           "type": "integer"
         },
-        "flight_microseconds": {
+        "flight_ms": {
           "type": "integer"
         },
         "throw_position": {
@@ -408,7 +424,7 @@
         "grenade_id",
         "thrower",
         "kind",
-        "throw_time_microseconds",
+        "throw_ms",
         "throw_position"
       ],
       "description": "GrenadeBasic is one thrown smoke or decoy."
@@ -428,13 +444,13 @@
           "type": "string",
           "description": "const \"flash\""
         },
-        "throw_time_microseconds": {
+        "throw_ms": {
           "type": "integer"
         },
-        "detonate_time_microseconds": {
+        "detonate_ms": {
           "type": "integer"
         },
-        "flight_microseconds": {
+        "flight_ms": {
           "type": "integer"
         },
         "throw_position": {
@@ -462,7 +478,7 @@
         "grenade_id",
         "thrower",
         "kind",
-        "throw_time_microseconds",
+        "throw_ms",
         "throw_position"
       ],
       "description": "GrenadeFlash is one thrown flashbang."
@@ -482,13 +498,13 @@
           "type": "string",
           "description": "const \"he\""
         },
-        "throw_time_microseconds": {
+        "throw_ms": {
           "type": "integer"
         },
-        "detonate_time_microseconds": {
+        "detonate_ms": {
           "type": "integer"
         },
-        "flight_microseconds": {
+        "flight_ms": {
           "type": "integer"
         },
         "throw_position": {
@@ -518,7 +534,7 @@
         "grenade_id",
         "thrower",
         "kind",
-        "throw_time_microseconds",
+        "throw_ms",
         "throw_position"
       ],
       "description": "GrenadeHE is one thrown HE grenade."
@@ -538,16 +554,16 @@
           "type": "string",
           "description": "\"molotov\" or \"incendiary\""
         },
-        "throw_time_microseconds": {
+        "throw_ms": {
           "type": "integer"
         },
-        "detonate_time_microseconds": {
+        "detonate_ms": {
           "type": "integer"
         },
-        "expire_time_microseconds": {
+        "expire_ms": {
           "type": "integer"
         },
-        "flight_microseconds": {
+        "flight_ms": {
           "type": "integer"
         },
         "throw_position": {
@@ -584,7 +600,7 @@
         "grenade_id",
         "thrower",
         "kind",
-        "throw_time_microseconds",
+        "throw_ms",
         "throw_position"
       ],
       "description": "GrenadeMolotov is one thrown molotov or incendiary."
@@ -689,8 +705,9 @@
           "type": "string",
           "description": "pickup / buy / bomb_plant / round_end"
         },
-        "time_microseconds": {
-          "type": "integer"
+        "t_ms": {
+          "type": "integer",
+          "description": "since round start, ms"
         },
         "health": {
           "type": "integer"
@@ -757,8 +774,9 @@
           "type": "integer",
           "description": "1-based round in progress at the event"
         },
-        "time_microseconds": {
-          "type": "integer"
+        "t_ms": {
+          "type": "integer",
+          "description": "absolute match time, ms"
         }
       },
       "additionalProperties": false,
@@ -767,7 +785,7 @@
         "kind",
         "steam_id",
         "round",
-        "time_microseconds"
+        "t_ms"
       ],
       "description": "LifecycleEvent is one connection/bot transition for a playing-team player."
     },
@@ -866,7 +884,7 @@
         },
         "schema_version": {
           "type": "integer",
-          "description": "const 5"
+          "description": "const 6"
         },
         "meta": {
           "$ref": "#/$defs/Meta"
@@ -883,26 +901,9 @@
           },
           "type": "array"
         },
-        "duel_pairs": {
-          "items": {
-            "$ref": "#/$defs/Duel"
-          },
-          "type": "array",
-          "description": "whole-match head-to-head pairs/edge list with per-pair TTD"
-        },
-        "flash_pairs": {
-          "items": {
-            "$ref": "#/$defs/FlashPair"
-          },
-          "type": "array",
-          "description": "whole-match who-blinded-whom pairs/edge list"
-        },
-        "match_lifecycle": {
-          "items": {
-            "$ref": "#/$defs/LifecycleEvent"
-          },
-          "type": "array",
-          "description": "match-level connect/disconnect/bot-takeover log, playing-team players only,\nsorted by time at finalize for determinism."
+        "stats": {
+          "$ref": "#/$defs/Stats",
+          "description": "match-level aggregates (duel/flash pairs, lifecycle log)"
         }
       },
       "additionalProperties": false,
@@ -913,8 +914,7 @@
         "meta",
         "players",
         "rounds",
-        "duel_pairs",
-        "flash_pairs"
+        "stats"
       ]
     },
     "Meta": {
@@ -956,7 +956,7 @@
         "tick_rate": {
           "type": "number"
         },
-        "duration_microseconds": {
+        "duration_ms": {
           "type": "integer"
         },
         "total_rounds": {
@@ -983,49 +983,11 @@
         "is_dedicated_server",
         "build_num",
         "tick_rate",
-        "duration_microseconds",
+        "duration_ms",
         "total_rounds",
         "score",
         "output"
       ]
-    },
-    "OpeningDuel": {
-      "properties": {
-        "time_microseconds": {
-          "type": "integer"
-        },
-        "killer": {
-          "type": "string"
-        },
-        "killer_side": {
-          "type": "string"
-        },
-        "victim": {
-          "type": "string"
-        },
-        "victim_side": {
-          "type": "string"
-        },
-        "weapon": {
-          "type": "string"
-        },
-        "traded": {
-          "type": "boolean",
-          "description": "victim was traded inside the trade window"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "time_microseconds",
-        "killer",
-        "killer_side",
-        "victim",
-        "victim_side",
-        "weapon",
-        "traded"
-      ],
-      "description": "OpeningDuel is a round's first kill."
     },
     "OpeningStats": {
       "properties": {
@@ -1071,7 +1033,21 @@
         },
         "positions_sample_hz": {
           "type": "number",
-          "description": "declared frame cadence, default 4.0"
+          "description": "configured frame cadence, default 4.0"
+        },
+        "positions_fields": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "declared column order of a streams.positions[] tuple (see model.PositionFields)"
+        },
+        "ground_item_positions_fields": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "declared column order of a ground_items[].positions tuple (see model.GroundItemPositionFields)"
         },
         "map_mesh_loaded": {
           "type": "boolean",
@@ -1086,6 +1062,28 @@
         "map_mesh_loaded"
       ],
       "description": "OutputMeta is the self-describing fidelity descriptor: the tier and the set of populated detail streams."
+    },
+    "PlantAttempt": {
+      "properties": {
+        "t_ms": {
+          "type": "integer",
+          "description": "start, since round start, ms"
+        },
+        "planter": {
+          "type": "string"
+        },
+        "aborted": {
+          "type": "boolean",
+          "description": "started then cancelled (fake plant)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "t_ms",
+        "planter"
+      ],
+      "description": "PlantAttempt is one started plant, completed or aborted (a fake plant)."
     },
     "Player": {
       "properties": {
@@ -1142,68 +1140,39 @@
         "exit_deaths": {
           "type": "integer"
         },
-        "kd": {
-          "type": "number",
-          "description": "Computed metrics"
-        },
-        "adr": {
-          "type": "number"
-        },
-        "kpr": {
-          "type": "number"
-        },
-        "dpr": {
-          "type": "number"
-        },
-        "apr": {
-          "type": "number"
-        },
-        "kast_pct": {
-          "type": "number"
-        },
-        "hs_pct": {
-          "type": "number",
-          "description": "headshot kills / kills"
-        },
-        "accuracy_pct": {
-          "type": "number",
-          "description": "hits / shots fired"
-        },
-        "head_accuracy_pct": {
-          "type": "number",
-          "description": "head hits / hits, AWP excluded"
-        },
-        "spotted_accuracy_pct": {
-          "type": "number",
-          "description": "The omitempty fields below need a map mesh for line of sight and are dropped when none is loaded."
+        "stats": {
+          "$ref": "#/$defs/PlayerStats",
+          "description": "Derived ratios / ratings / percentages, nested so they can't be confused with\nthe raw counts above. See PlayerStats."
         },
         "spotted_shots": {
           "type": "integer",
-          "description": "denominator of the above"
+          "description": "Raw counts that feed the derived stats (kept top-level, directly tallied).\nThe omitempty fields below need a map mesh for line of sight and drop when none is loaded."
         },
         "spotted_hits": {
           "type": "integer",
-          "description": "numerator"
-        },
-        "spray_accuracy_pct": {
-          "type": "number",
-          "description": "share of spray bullets that hit"
-        },
-        "time_to_damage_ms": {
-          "type": "number",
-          "description": "avg ms, seeing an enemy to first damage"
+          "description": "spotted-accuracy numerator"
         },
         "time_to_damage_samples": {
           "type": "integer",
           "description": "engagements measured. low means noisy"
         },
-        "crosshair_placement": {
-          "type": "number",
-          "description": "median deg moved from sighting to hit"
-        },
         "crosshair_samples": {
           "type": "integer",
           "description": "low means noisy"
+        },
+        "time_to_damage_raw": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array",
+          "description": "raw per-engagement samples, only emitted with the aim-debug option. used by the\noffline calibration sweep; omitted (nil) in normal output."
+        },
+        "crosshair_raw": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array",
+          "description": "raw deg samples, pre-median"
         },
         "trade_kill_opportunities": {
           "type": "integer"
@@ -1222,13 +1191,6 @@
         },
         "traded_deaths": {
           "type": "integer"
-        },
-        "hltv_rating_1": {
-          "type": "number"
-        },
-        "hltv_rating_2": {
-          "type": "number",
-          "description": "2.0, approximate"
         },
         "no_scope_kills": {
           "type": "integer"
@@ -1367,16 +1329,7 @@
         "shots_fired",
         "exit_kills",
         "exit_deaths",
-        "kd",
-        "adr",
-        "kpr",
-        "dpr",
-        "apr",
-        "kast_pct",
-        "hs_pct",
-        "accuracy_pct",
-        "head_accuracy_pct",
-        "crosshair_placement",
+        "stats",
         "crosshair_samples",
         "trade_kill_opportunities",
         "trade_kill_attempts",
@@ -1384,8 +1337,6 @@
         "traded_death_opportunities",
         "traded_death_attempts",
         "traded_deaths",
-        "hltv_rating_1",
-        "hltv_rating_2",
         "no_scope_kills",
         "wallbang_kills",
         "collateral_kills",
@@ -1404,106 +1355,79 @@
         "utility_averages"
       ]
     },
-    "PlayerFrame": {
+    "PlayerStats": {
       "properties": {
-        "time_microseconds": {
-          "type": "integer",
-          "description": "since round start"
-        },
-        "steam_id": {
-          "type": "string"
-        },
-        "side": {
-          "type": "string"
-        },
-        "position": {
-          "$ref": "#/$defs/Position"
-        },
-        "velocity": {
-          "$ref": "#/$defs/Position",
-          "description": "velocity vector (u/s), derived from the position delta (CS2 doesn't network m_vecVelocity)"
-        },
-        "yaw": {
+        "kd": {
           "type": "number"
         },
-        "pitch": {
+        "adr": {
           "type": "number"
         },
-        "health": {
-          "type": "integer"
+        "kpr": {
+          "type": "number"
         },
-        "armor": {
-          "type": "integer"
+        "dpr": {
+          "type": "number"
         },
-        "money": {
-          "type": "integer"
+        "apr": {
+          "type": "number"
         },
-        "is_alive": {
-          "type": "boolean"
+        "kast_pct": {
+          "type": "number"
         },
-        "is_airborne": {
-          "type": "boolean"
-        },
-        "is_scoped": {
-          "type": "boolean"
-        },
-        "is_ducking": {
-          "type": "boolean"
-        },
-        "has_defuse_kit": {
-          "type": "boolean"
-        },
-        "active_weapon": {
-          "type": "string",
-          "description": "active weapon, always resolved (never empty). On a weapon-switch/defuse/dead\ntick where the engine reports no active weapon, this falls back to a sentinel:\n\"defuse_kit\" while defusing, \"c4\" while planting or carrying the bomb, else the\nlast-known active weapon for the player."
-        },
-        "is_walking": {
-          "type": "boolean",
-          "description": "cheap per-frame state. ride only on the positions frame, not on kills."
-        },
-        "in_buy_zone": {
-          "type": "boolean"
-        },
-        "in_bomb_zone": {
-          "type": "boolean"
-        },
-        "stamina": {
+        "hs_pct": {
           "type": "number",
-          "description": "jump/landing stamina"
+          "description": "headshot kills / kills"
         },
-        "duck_amount": {
+        "accuracy_pct": {
           "type": "number",
-          "description": "0..1 partial crouch (raw m_flDuckAmount)"
+          "description": "hits / shots fired"
         },
-        "place": {
-          "type": "string",
-          "description": "m_szLastPlaceName callout region, e.g. \"Banana\", \"Mid\""
+        "head_accuracy_pct": {
+          "type": "number",
+          "description": "head hits / hits, AWP excluded"
         },
-        "hold_frames": {
-          "type": "integer",
-          "description": "HoldFrames is the number of additional 250ms samples this exact state\npersisted; the consumer holds the player static for HoldFrames more sample\nperiods after time_microseconds (no interpolation during a hold). 0/absent =\na normal single frame. Set by the finalize-time RLE compression pass."
+        "spotted_accuracy_pct": {
+          "type": "number",
+          "description": "mesh-gated (line of sight): dropped when no map mesh is loaded."
+        },
+        "spray_accuracy_pct": {
+          "type": "number",
+          "description": "share of spray bullets that hit"
+        },
+        "time_to_damage_ms": {
+          "type": "number",
+          "description": "median ms, seeing an enemy to first damage"
+        },
+        "crosshair_placement": {
+          "type": "number",
+          "description": "median deg moved from sighting to hit"
+        },
+        "hltv_rating_1": {
+          "type": "number"
+        },
+        "hltv_rating_2": {
+          "type": "number",
+          "description": "2.0, approximate"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "time_microseconds",
-        "steam_id",
-        "side",
-        "position",
-        "yaw",
-        "pitch",
-        "health",
-        "armor",
-        "money",
-        "is_alive",
-        "is_airborne",
-        "is_scoped",
-        "is_ducking",
-        "has_defuse_kit",
-        "active_weapon"
+        "kd",
+        "adr",
+        "kpr",
+        "dpr",
+        "apr",
+        "kast_pct",
+        "hs_pct",
+        "accuracy_pct",
+        "head_accuracy_pct",
+        "crosshair_placement",
+        "hltv_rating_1",
+        "hltv_rating_2"
       ],
-      "description": "PlayerFrame is one player's sampled position and state at a single frame."
+      "description": "PlayerStats is the per-player nested derived block (players[].stats): the ratios, ratings and percentages computed FROM the player's raw counts."
     },
     "Position": {
       "properties": {
@@ -1542,13 +1466,21 @@
           "type": "string",
           "description": "elimination / bomb_exploded / bomb_defused / time_expired"
         },
-        "round_end_microseconds": {
+        "round_start_ms": {
           "type": "integer",
-          "description": "round-live start to round end"
+          "description": "freeze (round) start, ms; negative, relative to go-live at t=0"
         },
-        "post_round_microseconds": {
+        "freeze_end_ms": {
           "type": "integer",
-          "description": "round end to next freeze, the exit window"
+          "description": "freeze end / round goes live, ms; always 0 (the round timeline origin)"
+        },
+        "round_end_ms": {
+          "type": "integer",
+          "description": "round-live start to round end, ms"
+        },
+        "post_round_ms": {
+          "type": "integer",
+          "description": "round end to next freeze, the exit window, ms"
         },
         "economy": {
           "$ref": "#/$defs/RoundEconomy"
@@ -1579,9 +1511,6 @@
           },
           "type": "array",
           "description": "live-round damage events"
-        },
-        "opening_duel": {
-          "$ref": "#/$defs/OpeningDuel"
         },
         "shot_stats": {
           "items": {
@@ -1617,8 +1546,10 @@
         "winner_side",
         "winner_team",
         "reason",
-        "round_end_microseconds",
-        "post_round_microseconds",
+        "round_start_ms",
+        "freeze_end_ms",
+        "round_end_ms",
+        "post_round_ms",
         "economy",
         "players",
         "kills",
@@ -1644,18 +1575,21 @@
     },
     "RoundKill": {
       "properties": {
-        "time_microseconds": {
-          "type": "integer"
+        "t_ms": {
+          "type": "integer",
+          "description": "since round start, ms"
         },
         "killer": {
-          "type": "string"
+          "type": "string",
+          "description": "null when kind != \"player\" (bomb/world/suicide have no player killer)"
         },
         "killer_side": {
           "type": "string",
-          "description": "CT/T at this round"
+          "description": "CT/T at this round; absent for non-player kills"
         },
         "killer_position": {
-          "$ref": "#/$defs/Position"
+          "$ref": "#/$defs/Position",
+          "description": "nil for non-player kills (no live killer)"
         },
         "victim": {
           "type": "string"
@@ -1706,7 +1640,7 @@
         },
         "distance": {
           "type": "number",
-          "description": "killer to victim, game units"
+          "description": "killer to victim, game units; absent for non-player kills"
         },
         "attacker_blind": {
           "type": "boolean"
@@ -1722,11 +1656,11 @@
         },
         "killer_speed": {
           "type": "number",
-          "description": "killer horizontal speed at the kill, u/s, derived"
+          "description": "killer horizontal speed at the kill, u/s, derived; absent for non-player kills"
         },
         "killer_speed_ratio": {
           "type": "number",
-          "description": "speed / weapon max move speed. lower is better"
+          "description": "speed / weapon max move speed. lower is better; absent for non-player kills"
         },
         "opening": {
           "type": "boolean",
@@ -1759,10 +1693,8 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "time_microseconds",
+        "t_ms",
         "killer",
-        "killer_side",
-        "killer_position",
         "victim",
         "victim_side",
         "victim_position",
@@ -1774,13 +1706,10 @@
         "penetration",
         "through_smoke",
         "no_scope",
-        "distance",
         "attacker_blind",
         "victim_blind",
         "killer_airborne",
         "victim_airborne",
-        "killer_speed",
-        "killer_speed_ratio",
         "opening"
       ]
     },
@@ -1918,10 +1847,16 @@
     "RoundStreams": {
       "properties": {
         "positions": {
-          "items": {
-            "$ref": "#/$defs/PlayerFrame"
+          "additionalProperties": {
+            "items": {
+              "type": "array",
+              "maxItems": 19,
+              "minItems": 19,
+              "description": "columnar position sample, fields in order: t_ms, side, x, y, z, vx, vy, vz, yaw, pitch, health, armor, money, flags, active_weapon, place, stamina, duck_amount, hold_frames (flags bits: alive=1, airborne=2, scoped=4, ducking=8, has_defuse_kit=16, buyzone=32, walking=64, bomb_zone=128)"
+            },
+            "type": "array"
           },
-          "type": "array"
+          "type": "object"
         },
         "shots": {
           "items": {
@@ -1941,9 +1876,9 @@
           },
           "type": "array"
         },
-        "dropped_weapons": {
+        "ground_items": {
           "items": {
-            "$ref": "#/$defs/DroppedWeapon"
+            "$ref": "#/$defs/DroppedItem"
           },
           "type": "array"
         }
@@ -1977,9 +1912,9 @@
     },
     "Shot": {
       "properties": {
-        "time_microseconds": {
+        "t_ms": {
           "type": "integer",
-          "description": "since round start"
+          "description": "since round start, ms"
         },
         "shooter": {
           "type": "string"
@@ -1998,13 +1933,13 @@
         },
         "recoil_index": {
           "type": "number",
-          "description": "engine recoil index: shot number into the current spray. map against the shipped spray_patterns instead of reimplementing recoil math"
+          "description": "RecoilIndex is the engine recoil index: the shot number into the current\nspray. Map it against the shipped players[].spray_patterns table rather than\nreimplementing recoil math. NOTE: spray_patterns are base/pattern-space bytes\nfrom the weaponX/weaponY recoil table; they are NOT real GOTV recoil (real\nrecoil from CMsgTEFireBullets is ~2x and lives in a different space)."
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "time_microseconds",
+        "t_ms",
         "shooter",
         "weapon",
         "position",
@@ -2108,6 +2043,38 @@
       ],
       "description": "SprayDeviation holds how a player's sprays with one weapon matched its recoil pattern, averaged over every 3+ shot spray they fired."
     },
+    "Stats": {
+      "properties": {
+        "duel_pairs": {
+          "items": {
+            "$ref": "#/$defs/Duel"
+          },
+          "type": "array",
+          "description": "whole-match head-to-head pairs/edge list with per-pair TTD"
+        },
+        "flash_pairs": {
+          "items": {
+            "$ref": "#/$defs/FlashPair"
+          },
+          "type": "array",
+          "description": "whole-match who-blinded-whom pairs/edge list"
+        },
+        "match_lifecycle": {
+          "items": {
+            "$ref": "#/$defs/LifecycleEvent"
+          },
+          "type": "array",
+          "description": "match-level connect/disconnect/bot-takeover log, playing-team players only,\nsorted by time at finalize for determinism."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "duel_pairs",
+        "flash_pairs"
+      ],
+      "description": "Stats groups the match-level aggregate blocks at the document root."
+    },
     "TeamEconomy": {
       "properties": {
         "equipment_value": {
@@ -2127,9 +2094,9 @@
     },
     "UtilityAverages": {
       "properties": {
-        "blind_microseconds": {
+        "blind_ms": {
           "type": "number",
-          "description": "blind time per enemy flashed"
+          "description": "blind time per enemy flashed, ms"
         },
         "he_damage": {
           "type": "number",
@@ -2153,7 +2120,7 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "blind_microseconds",
+        "blind_ms",
         "he_damage",
         "he_team_damage",
         "molotov_damage",
@@ -2190,9 +2157,9 @@
           "type": "integer",
           "description": "enemy killed by thrower's team while fully blind from this flash"
         },
-        "enemy_blind_microseconds": {
+        "enemy_blind_ms": {
           "type": "integer",
-          "description": "total blind time put on enemies"
+          "description": "total blind time put on enemies, ms"
         },
         "he_damage": {
           "type": "integer"
@@ -2226,7 +2193,7 @@
         "enemies_flashed",
         "teammates_flashed",
         "flashes_leading_to_kill",
-        "enemy_blind_microseconds",
+        "enemy_blind_ms",
         "he_damage",
         "he_team_damage",
         "molotov_damage",
@@ -2250,8 +2217,9 @@
         "from_enemy": {
           "type": "boolean"
         },
-        "time_microseconds": {
-          "type": "integer"
+        "t_ms": {
+          "type": "integer",
+          "description": "since round start, ms"
         }
       },
       "additionalProperties": false,
@@ -2259,7 +2227,7 @@
       "required": [
         "steam_id",
         "weapon",
-        "time_microseconds"
+        "t_ms"
       ],
       "description": "WeaponPickup is one TRUE weapon pickup in a round: the picked-up gun's original_owner differs from the holder who picked it up."
     },
