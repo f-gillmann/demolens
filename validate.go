@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
-)
 
-// every CS2 demo starts with this stamp.
-const cs2Magic = "PBDEMS2"
+	"github.com/f-gillmann/demolens/v2/internal/parser"
+)
 
 type Info struct {
 	Format   string
@@ -24,8 +23,8 @@ func Validate(r io.Reader) (Info, error) {
 		return Info{}, fmt.Errorf("read demo header: %w", err)
 	}
 	format := strings.TrimRight(string(header), "\x00")
-	if format != cs2Magic {
-		return Info{}, fmt.Errorf("not a CS2 demo (header %q, want %q)", format, cs2Magic)
+	if format != parser.CS2Magic {
+		return Info{}, fmt.Errorf("not a CS2 demo (header %q, want %q)", format, parser.CS2Magic)
 	}
 
 	hash := sha256.New()

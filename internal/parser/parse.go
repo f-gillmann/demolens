@@ -1,17 +1,23 @@
 package parser
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/f-gillmann/demolens/v2/model"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
+
+// CS2Magic is the 8-byte stamp every CS2 demo starts with.
+const CS2Magic = "PBDEMS2"
 
 // Options turns on the expensive per-frame captures. Zero value is the cheap path
 // (no heavy streams, tier "core"). A non-empty Tier preset flips the stream
@@ -117,7 +123,17 @@ const flashFullyBlind = 1100 * time.Millisecond
 
 func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 	hash := sha256.New()
-	parsed := dem.NewParser(io.TeeReader(r, hash))
+	// tee below bufio so hashing sees every byte exactly once, then peek the
+	// header to fail fast on non-CS2 input; demoinfocs reads from the bufio reader.
+	buf := bufio.NewReader(io.TeeReader(r, hash))
+	header, err := buf.Peek(8)
+	if err != nil {
+		return nil, fmt.Errorf("read demo header: %w", err)
+	}
+	if format := strings.TrimRight(string(header), "\x00"); format != CS2Magic {
+		return nil, fmt.Errorf("not a CS2 demo (header %q, want %q)", format, CS2Magic)
+	}
+	parsed := dem.NewParser(buf)
 	defer func() {
 		if closeErr := parsed.Close(); closeErr != nil && err == nil {
 			err = closeErr
