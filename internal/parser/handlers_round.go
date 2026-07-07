@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/f-gillmann/demolens/v2/internal/demosource"
 	"github.com/f-gillmann/demolens/v2/internal/geom"
 	"github.com/f-gillmann/demolens/v2/model"
 	"github.com/golang/geo/r3"
@@ -108,7 +107,7 @@ func (st *parseState) onFreezetimeEnd(_ events.RoundFreezetimeEnd) {
 	st.finalize()
 
 	if st.match.Meta.GameMode == "" {
-		st.match.Meta.GameMode = demosource.GameMode(gs.Rules().ConVars())
+		st.match.Meta.GameMode = gameMode(gs.Rules().ConVars())
 	}
 	if st.opts.MapsDir != "" && !st.vision.meshTried {
 		st.vision.meshTried = true

@@ -1,5 +1,4 @@
-// Package demosource detects a demo's provenance (source, game mode, demo type) from header and convar data.
-package demosource
+package parser
 
 import (
 	"strconv"
@@ -28,7 +27,7 @@ var sourcePatterns = []struct{ substr, source string }{
 }
 
 // guessSource sniffs the origin platform out of the server name.
-func GuessSource(serverName string) string {
+func guessSource(serverName string) string {
 	name := strings.ToLower(serverName)
 	for _, p := range sourcePatterns {
 		if strings.Contains(name, p.substr) {
@@ -40,7 +39,7 @@ func GuessSource(serverName string) string {
 
 // gameMode reads the game_type/game_mode convars into a readable mode. Returns
 // empty when those convars are missing, which is normal on third-party servers.
-func GameMode(convars map[string]string) string {
+func gameMode(convars map[string]string) string {
 	gt, ok1 := atoi(convars["game_type"])
 	gm, ok2 := atoi(convars["game_mode"])
 	if !ok1 || !ok2 {
@@ -66,7 +65,7 @@ func GameMode(convars map[string]string) string {
 }
 
 // demoType tells GOTV (spectator) recordings from POV ones.
-func DemoType(isHltv bool, clientName string) string {
+func demoType(isHltv bool, clientName string) string {
 	name := strings.ToLower(clientName)
 	if isHltv || strings.Contains(name, "sourcetv") || strings.Contains(name, "gotv") {
 		return "gotv"

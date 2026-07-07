@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/f-gillmann/demolens/v2/internal/csdata"
-	"github.com/f-gillmann/demolens/v2/internal/demosource"
 	"github.com/f-gillmann/demolens/v2/model"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 )
@@ -31,8 +30,8 @@ func (st *parseState) finalizeMatch() {
 	st.match.Meta.TickRate = st.parsed.TickRate()
 	st.match.Meta.DurationMs = st.parsed.CurrentTime().Milliseconds()
 	st.match.Meta.TotalRounds = len(st.match.Rounds)
-	st.match.Meta.ServerPlatform = demosource.GuessSource(st.match.Meta.ServerName)
-	st.match.Meta.DemoType = demosource.DemoType(st.match.Meta.IsHltv, st.match.Meta.ClientName)
+	st.match.Meta.ServerPlatform = guessSource(st.match.Meta.ServerName)
+	st.match.Meta.DemoType = demoType(st.match.Meta.IsHltv, st.match.Meta.ClientName)
 
 	st.finalizeOutputMeta()
 	st.finalizeScore()
