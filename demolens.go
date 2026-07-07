@@ -3,7 +3,6 @@ package demolens
 import (
 	"io"
 
-	"github.com/f-gillmann/demolens/v2/internal/demofile"
 	"github.com/f-gillmann/demolens/v2/internal/maps"
 	"github.com/f-gillmann/demolens/v2/internal/metrics"
 	"github.com/f-gillmann/demolens/v2/internal/parser"
@@ -32,12 +31,6 @@ func Analyze(r io.Reader, opts Options) (*model.Match, error) {
 
 	metrics.Compute(match)
 	return match, nil
-}
-
-// Validate checks the demo header and returns the format stamp plus a SHA-256 of
-// the bytes.
-func Validate(r io.Reader) (demofile.Info, error) {
-	return demofile.Validate(r)
 }
 
 // ExtractMap writes a map's .tri collision file and returns the path and triangle count.

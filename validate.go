@@ -1,4 +1,4 @@
-package demofile
+package demolens
 
 import (
 	"crypto/sha256"
@@ -16,7 +16,8 @@ type Info struct {
 	FileHash string
 }
 
-// Validate checks the demo magic bytes and returns the format info plus a SHA-256 of the stream.
+// Validate checks the demo header and returns the format stamp plus a SHA-256 of
+// the bytes.
 func Validate(r io.Reader) (Info, error) {
 	header := make([]byte, 8)
 	if _, err := io.ReadFull(r, header); err != nil {
