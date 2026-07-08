@@ -191,12 +191,23 @@ type aimState struct {
 	crosshair      map[uint64][]float64               // crosshair-move samples in deg
 }
 
+// activeSmoke is one live smoke cloud: where it bloomed and when, so the
+// occlusion probe can track the visual lifetime instead of the entity's.
+// vox carries the decoded voxel occupancy when the demo networks it; the
+// sphere fallback in smokeBlocked only applies while vox has no usable data.
+type activeSmoke struct {
+	pos   r3.Vector
+	start time.Duration // demo time at SmokeStart (detonation)
+	vox   *voxelSmoke
+}
+
 // visionState holds the geometric-sighting machinery: collision mesh, live
 // smokes, per-pair sighting state, and the reused per-frame scratch slices.
 type visionState struct {
 	mesh         *geom.Mesh
 	meshTried    bool
-	activeSmokes map[int]r3.Vector         // entityID to cloud pos while blooming
+	activeSmokes map[int]activeSmoke       // entityID to live smoke cloud
+	voxelSmokes  map[int]*voxelSmoke       // entityID to decoded voxel stream, removed on entity destroy
 	engagements  map[[2]uint64]*engagement // (shooter,enemy) sighting state, wiped each round
 	live         []pv                      // alive players' eye+view, rebuilt per frame
 	cands        []cand                    // frustum-passing pairs deferred to the parallel los pass
@@ -270,7 +281,8 @@ func newParseState(parsed dem.Parser, opts Options, match *model.Match) *parseSt
 			crosshair:      map[uint64][]float64{},
 		},
 		vision: visionState{
-			activeSmokes: map[int]r3.Vector{},
+			activeSmokes: map[int]activeSmoke{},
+			voxelSmokes:  map[int]*voxelSmoke{},
 			engagements:  map[[2]uint64]*engagement{},
 			live:         make([]pv, 0, 10),
 			cands:        make([]cand, 0, 32),

@@ -255,6 +255,7 @@ func (st *parseState) runLOSPass() {
 			fireCells = append(fireCells, fire.Vector)
 		}
 	}
+	now := st.parsed.CurrentTime()
 
 	if len(st.vision.cands) >= losParallelThreshold {
 		workers := runtime.GOMAXPROCS(0)
@@ -277,7 +278,7 @@ func (st *parseState) runLOSPass() {
 				defer wg.Done()
 				for k := lo; k < hi; k++ {
 					c := &st.vision.cands[k]
-					noSmoke := !smokeBlocked(c.sEye, c.eEye, st.vision.activeSmokes)
+					noSmoke := !smokeBlocked(c.sEye, c.eEye, st.vision.activeSmokes, now)
 					c.vis = losAnyPartFeet(st.vision.mesh, c.sEye, c.eFeet) && noSmoke &&
 						!fireBlocked(c.sEye, c.eEye, fireCells) &&
 						!playerBlocked(c.sEye, c.eEye, st.vision.live, c.sID, c.vID)
@@ -292,7 +293,7 @@ func (st *parseState) runLOSPass() {
 	} else {
 		for k := range st.vision.cands {
 			c := &st.vision.cands[k]
-			noSmoke := !smokeBlocked(c.sEye, c.eEye, st.vision.activeSmokes)
+			noSmoke := !smokeBlocked(c.sEye, c.eEye, st.vision.activeSmokes, now)
 			c.vis = losAnyPartFeet(st.vision.mesh, c.sEye, c.eFeet) && noSmoke &&
 				!fireBlocked(c.sEye, c.eEye, fireCells) &&
 				!playerBlocked(c.sEye, c.eEye, st.vision.live, c.sID, c.vID)

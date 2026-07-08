@@ -186,7 +186,11 @@ func (st *parseState) onInfernoExpired(e events.InfernoExpired) {
 }
 
 func (st *parseState) onSmokeStartTrack(e events.SmokeStart) {
-	st.vision.activeSmokes[e.GrenadeEntityID] = e.Position
+	st.vision.activeSmokes[e.GrenadeEntityID] = activeSmoke{
+		pos:   e.Position,
+		start: st.parsed.CurrentTime(),
+		vox:   st.vision.voxelSmokes[e.GrenadeEntityID],
+	}
 }
 
 func (st *parseState) onSmokeExpiredTrack(e events.SmokeExpired) {

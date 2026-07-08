@@ -173,6 +173,7 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 
 	parsed.RegisterEventHandler(st.onSmokeStartTrack)
 	parsed.RegisterEventHandler(st.onSmokeExpiredTrack)
+	parsed.RegisterEventHandler(st.onSmokeVoxelTables)
 
 	parsed.RegisterEventHandler(st.onPlayerFlashed)
 

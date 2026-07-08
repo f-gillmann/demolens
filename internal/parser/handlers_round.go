@@ -7,7 +7,6 @@ import (
 
 	"github.com/f-gillmann/demolens/v2/internal/geom"
 	"github.com/f-gillmann/demolens/v2/model"
-	"github.com/golang/geo/r3"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/msg"
@@ -117,7 +116,7 @@ func (st *parseState) onFreezetimeEnd(_ events.RoundFreezetimeEnd) {
 	st.vision.engagements = map[[2]uint64]*engagement{} // none of these carry across rounds
 	st.grenades.flashLead = map[uint64]pendingFlash{}
 	st.grenades.flashAlpha = map[flashAlphaKey]float64{}
-	st.vision.activeSmokes = map[int]r3.Vector{}
+	st.vision.activeSmokes = map[int]activeSmoke{}
 	st.dmgToVictim = map[uint64]int{}
 	st.roundStart = st.parsed.CurrentTime()
 	// buy window: go-live + mp_buytime. read the convar fresh each round (it can

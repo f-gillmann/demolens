@@ -91,12 +91,39 @@ func losTorso(mesh *geom.Mesh, eyeFrom, eyeTo r3.Vector) bool {
 // los-blocking radius of a CS2 smoke, in game units
 const smokeRadius = 144.0
 
-// smokeBlocked is true if the from..to sightline clips an active smoke, i.e. the
-// segment-to-sphere distance drops under smokeRadius.
-func smokeBlocked(from, to r3.Vector, smokes map[int]r3.Vector) bool {
+// visual lifetime of a CS2 smoke cloud from detonation: full density until
+// ~15s, edge-thinning until it is gone at 18s. The SmokeExpired entity event
+// fires ~22s in, ~4s after the cloud visually disappeared, so occlusion must
+// track this clock and not the entity's.
+const (
+	smokeFullMs = 18000.0
+	smokeGoneMs = 18000.0
+)
+
+// smokeBlocked is true if the from..to sightline clips an active smoke. Clouds
+// with decoded voxel data are tested against their exact networked shape, and
+// their lifetime comes from the stream itself (blocking ends when the fade
+// phase flips). Clouds without it fall back to the sphere: segment-to-sphere
+// distance under smokeRadius at full density, tapering across the thinning
+// window.
+func smokeBlocked(from, to r3.Vector, smokes map[int]activeSmoke, now time.Duration) bool {
 	d := to.Sub(from)
 	ll := d.Dot(d)
-	for _, c := range smokes {
+	for _, s := range smokes {
+		if s.vox != nil && s.vox.ready {
+			if !s.vox.fading && s.vox.blocked(from, to) {
+				return true
+			}
+			continue
+		}
+		ageMs := float64((now - s.start).Microseconds()) / 1000
+		r := smokeRadius
+		if ageMs >= smokeGoneMs {
+			continue
+		} else if ageMs > smokeFullMs {
+			r *= (smokeGoneMs - ageMs) / (smokeGoneMs - smokeFullMs)
+		}
+		c := s.pos
 		t := 0.0
 		if ll > 0 {
 			t = c.Sub(from).Dot(d) / ll
@@ -106,7 +133,7 @@ func smokeBlocked(from, to r3.Vector, smokes map[int]r3.Vector) bool {
 				t = 1
 			}
 		}
-		if c.Sub(from.Add(d.Mul(t))).Norm() < smokeRadius {
+		if c.Sub(from.Add(d.Mul(t))).Norm() < r {
 			return true
 		}
 	}
@@ -224,7 +251,7 @@ func clamp01(x float64) float64 {
 
 // seesTarget is true when target is in shooter's vision now: on screen with
 // clear los and no smoke, or seen within the last recentSightingMs.
-func seesTarget(shooter, target *common.Player, mesh *geom.Mesh, smokes map[int]r3.Vector, eng map[[2]uint64]*engagement, fovHalfDeg float64, now time.Duration, recentSightingMs float64) bool {
+func seesTarget(shooter, target *common.Player, mesh *geom.Mesh, smokes map[int]activeSmoke, eng map[[2]uint64]*engagement, fovHalfDeg float64, now time.Duration, recentSightingMs float64) bool {
 	eyes, ok := shooter.PositionEyes()
 	if !ok || mesh == nil {
 		return false
@@ -234,7 +261,7 @@ func seesTarget(shooter, target *common.Player, mesh *geom.Mesh, smokes map[int]
 		return false
 	}
 
-	if enemyInFrustum(viewVector(shooter), pos.Sub(eyes), fovHalfDeg) && losClear(mesh, eyes, pos) && !smokeBlocked(eyes, pos, smokes) {
+	if enemyInFrustum(viewVector(shooter), pos.Sub(eyes), fovHalfDeg) && losClear(mesh, eyes, pos) && !smokeBlocked(eyes, pos, smokes, now) {
 		return true
 	}
 
@@ -249,7 +276,7 @@ func seesTarget(shooter, target *common.Player, mesh *geom.Mesh, smokes map[int]
 
 // shooterHasVision is true if any living enemy is in vision (per seesTarget).
 // This is the gate for spotted accuracy, counter-strafe and spray.
-func shooterHasVision(gs dem.GameState, shooter *common.Player, mesh *geom.Mesh, smokes map[int]r3.Vector, eng map[[2]uint64]*engagement, fovHalfDeg float64, now time.Duration, recentSightingMs float64) bool {
+func shooterHasVision(gs dem.GameState, shooter *common.Player, mesh *geom.Mesh, smokes map[int]activeSmoke, eng map[[2]uint64]*engagement, fovHalfDeg float64, now time.Duration, recentSightingMs float64) bool {
 	for _, e := range gs.Participants().Playing() {
 		if e.Team == shooter.Team || !e.IsAlive() {
 			continue
