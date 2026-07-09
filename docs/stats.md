@@ -6,7 +6,8 @@ Two sources feed the output. The **parser** (`internal/parser`) walks the demo e
 plus the few stats that need live game state: counter-strafe, spotted accuracy, time-to-damage, crosshair placement, spray.
 
 The **metrics** layer (`internal/metrics`) runs after and derives whatever falls out of that data on its own.
-Ratios, KAST, ratings, trades, clutches, openings, the matrices, utility averages.
+Ratios, KAST, ratings, trades, clutches, openings, the flash matrix, utility averages.
+The duel matrix is the exception: the parser builds it at finalize because it carries per-pair TTD samples.
 
 The stats split into two kinds and the difference matters:
 
@@ -15,19 +16,19 @@ The stats split into two kinds and the difference matters:
 
 ## Conventions
 
-Times are in microseconds.
+Times are in milliseconds.
 Anything round-relative is measured from freezetime end.
 Teams get pinned as A/B at first sighting and stay put when sides swap; CT/T is tracked per round instead.
 A "live round" is freezetime end through round end.
 Kills and deaths past that point are exit kills/deaths and don't touch K/D.
 
-## Raw counts
+## Raw counts (`aggregate.go`)
 
 Summed per round, then totalled for the match (`aggregate.go`).
 Kills and deaths come off kill events; post-round ones land in ExitKills/ExitDeaths.
 Assists and flash assists also come off the kill event, headshots off its headshot flag.
 Damage is PlayerHurt health damage, capped at the victim's remaining HP.
-ShotsFired counts gun shots, gated to the live round so it matches the live-only damage timeline behind accuracy.
+ShotsFired counts every gun shot, post-round exit fire included.
 
 ## Basic ratios (`ratios.go`)
 
@@ -66,14 +67,14 @@ $$\text{Impact} = 2.13\,\text{KPR} + 0.42\,\text{APR} - 0.41$$
 
 $$\text{Rating 2.0} = 0.0073\,\text{KAST} + 0.3591\,\text{KPR} - 0.5329\,\text{DPR} + 0.2372\,\text{Impact} + 0.0032\,\text{ADR} + 0.1587$$
 
-## Accuracy
+## Accuracy (`accuracy.go`)
 
 ### Overall
 
 Bullet hits on enemies over shots fired.
 Hits come from the damage timeline, deduped by shot time,
 so a bullet that penetrates two people only counts once.
-Both sides include post-round fire so they line up.
+The two sides don't span the same window: the shot count includes post-round fire, while the damage timeline only records live rounds, so hits are live-round only.
 
 $$\text{Accuracy} = \frac{\text{bullet hits on enemies}}{\text{shots fired}}$$
 
@@ -84,13 +85,16 @@ Same per-shot dedupe. This is every bullet that hit a head, not headshot kills.
 
 $$\text{Head accuracy} = \frac{\text{head hits}}{\text{hits on enemies}} \quad (\text{AWP excluded})$$
 
-## Aim stats
+## Aim stats (`vision.go`)
 
 All of these hinge on whether you could actually see an enemy, and the demo won't tell you that.
 The in-engine "spotted" flag lags real visibility by up to half a second,
 so we reconstruct sight geometrically against a collision mesh of the map (see `maps.md`).
 The enemy has to be on screen (inside the view frustum),
 with a clear raycast to some part of their body, and not behind smoke.
+Smoke blocking uses the exact voxel cloud the demo networks per smoke
+(the same volumetric fill the game computed), with a sphere fallback for
+demos that predate the voxel stream.
 `seesTarget` and `shooterHasVision` handle it.
 
 ### Spotted accuracy
@@ -110,8 +114,9 @@ $$\text{Spotted accuracy} = \frac{\text{hits with the enemy visible}}{\text{shot
 The share of rifle shots you fired while basically stopped.
 A shot counts if an enemy was in vision and you weren't fully crouched.
 It's "good" when your speed was under 40% of the weapon's max. Rifles only.
-CS2 leaves velocity out of the demo, so we derive speed from how far you moved between frames,
-and 40% is the threshold we settled on (the figure usually quoted is 34%).
+CS2 leaves velocity out of the demo, but the engine's exact speed is networked as `m_flFrictionStashedSpeed`,
+so we read that and only fall back to frame-to-frame movement when it's absent.
+40% is the threshold we settled on (the figure usually quoted is 34%).
 The raw good/total counts are exposed too.
 
 $$\text{Counter-strafe} = \frac{\text{stopped shots}}{\text{measured rifle shots}}, \quad \text{stopped when } v < 0.40\,v_{\max}$$
@@ -130,23 +135,26 @@ $$\text{Spray accuracy} = \frac{\text{spray bullets that hit}}{\text{spray bulle
 
 From seeing an enemy to your first damage on them.
 The clock starts when they enter your view frustum with clear los and no smoke,
-survives brief look-aways, and stops on your first gun damage. One sample per sighting.
-Plays where you saw someone but held fire (trigger discipline) get dropped.
-A fixed cutoff can't separate a slow player's normal duel from a fast player holding an angle,
-so instead we drop each player's *own* long outliers (anything past 2.2x their median),
-clamp the rest, and average.
+survives brief look-aways, and stops on your first damage with any weapon
+(a nade or fire tick counts too). One sample per sighting.
+Samples under 165ms are dropped: pre-aimed, not a measured reaction.
+Samples at or past 1600ms are dropped too: held fire on purpose (trigger discipline).
+The reported number is the median of what's left.
 
-For per-sighting samples $t_i$ (ms from first seeing the enemy to first damage) with player median $m$:
+For per-sighting samples $t_i$ (ms from first seeing the enemy to first damage):
 
-$$\text{TTD} = \operatorname{mean}\big\{\, \min(t_i,\ 1300) \;:\; t_i \le 2.2\,m \,\big\}$$
+$$\text{TTD} = \operatorname{median}\big\{\, t_i \;:\; 165 \le t_i < 1600 \,\big\}$$
 
 ### Crosshair placement
 
-The median angle your view swung between the enemy first appearing on screen and your first hit.
+The angle your view swung between the enemy first appearing on screen and your first hit.
+Per player it's a low-winsor mean: samples below the player's own 30th
+percentile are clamped up to it, then averaged. Nothing is dropped; the
+clamp just stops a few perfect pre-aims from dragging the average toward zero.
 
-For duels $i$ with view-move angle $\theta_i$ (degrees):
+For duels $i$ with view-move angle $\theta_i$ (degrees) and $\theta_{30}$ the player's 30th percentile:
 
-$$\text{Crosshair placement} = \operatorname{median}_i\ \theta_i$$
+$$\text{Crosshair placement} = \operatorname{mean}_i\ \max(\theta_i,\ \theta_{30})$$
 
 ## Trades (`trades.go`)
 
@@ -170,12 +178,28 @@ Kills made during the clutch are counted. A 1v1 counts for both sides.
 
 ## Breakdowns (`breakdown.go`)
 
+### Multi-kills
+
 Multi-kills are rounds with exactly n kills, 1 through 5.
+
+### No-scope, wallbang, collateral
+
 No-scope and wallbang come off the kill flags.
 A collateral is 2+ victims on a single bullet.
+
+### Weapon stats
+
 Weapon stats break down kills, headshots, and damage per weapon.
-The duel matrix is head-to-head kill counts for every killer-victim pair;
-the flash matrix is per flasher-flashed pair with total blind time.
+
+### Flash pairs
+
+The flash matrix (`flash_pairs`) is per flasher-flashed pair with total blind time.
+
+### Duel pairs
+
+The duel matrix (`duel_pairs`) records kills, damage, per-weapon kills, and TTD for every killer-victim pair;
+it's built by the parser (`finalize.go`), not here, because it needs the TTD samples.
+Both land in the match-level `stats` block at the document root.
 
 ## Utility (`utility.go`, `aggregate.go`)
 

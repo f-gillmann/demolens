@@ -29,8 +29,9 @@ Drop the files in `tris/`, the default and gitignored, or point somewhere else w
 ## Extracting collision from your maps
 
 `extract-map` runs Source2Viewer-CLI on the map's `world_physics.vmdl_c`, pulls the collision groups out of the result, and writes a `.tri`.
-It keeps solid surfaces and drops the stuff you see and shoot through anyway: player/grenade clip brushes, the skybox shell, chainlink fences.
-Library users get the same logic via `maps.Extract`.
+It keeps solid surfaces and drops the stuff you see and shoot through anyway.
+That means clip brushes, the skybox shell, and every see-through class: chainlink, grates, vents, glass, windows, and anything flagged passbullets.
+Library users get the same logic via `demolens.ExtractMap`.
 
 Install [source2viewer-cli](https://github.com/ValveResourceFormat/ValveResourceFormat) first and put it on your PATH, or pass `--vrf /path/to/it`. Then:
 
@@ -52,10 +53,10 @@ demolens extract-map --in world_physics_physics.glb --key de_mirage
 From Go:
 
 ```go
-import "github.com/f-gillmann/demolens/v2/maps"
-path, n, err := maps.Extract(maps.Params{CS2Dir: cs2, Map: "de_mirage", OutDir: "tris"})
+import "github.com/f-gillmann/demolens/v2"
+path, n, err := demolens.ExtractMap(demolens.ExtractMapParams{CS2Dir: cs2, Map: "de_mirage", OutDir: "tris"})
 ```
 
 It reads your files and writes `.tri`s locally. Nothing is downloaded or redistributed.
 
-`--cs2` points at the folder that holds `game/csgo/maps/`. Source2Viewer's flags drift between releases, so if an export fails, check `source2viewer-cli --help` and tweak `runVRF` in `maps/extract.go`.
+`--cs2` points at the folder that holds `game/csgo/maps/`. Source2Viewer's flags drift between releases, so if an export fails, check `source2viewer-cli --help` and tweak `runVRF` in `internal/maps/extract.go`.
