@@ -416,6 +416,10 @@
         },
         "detonate_position": {
           "$ref": "#/$defs/Position"
+        },
+        "voxels": {
+          "$ref": "#/$defs/SmokeVoxels",
+          "description": "smokes only, and only when the grenade_paths stream is on: the cloud's\nnetworked voxel occupancy over its lifetime. Absent when the demo does not\ncarry the voxel stream (older CS2 demos): render the fallback circle."
         }
       },
       "additionalProperties": false,
@@ -1976,6 +1980,68 @@
         "shots"
       ],
       "description": "ShotStat is the core-tier per-player-per-weapon shot aggregate, so stat consumers lose nothing when the per-shot stream is off."
+    },
+    "SmokeVoxelSample": {
+      "properties": {
+        "t_ms": {
+          "type": "integer",
+          "description": "since round start, ms"
+        },
+        "occupied": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array",
+          "description": "first sample only: the full occupied set, as runs"
+        },
+        "add": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array",
+          "description": "later samples: voxels turned occupied since the previous sample, as runs"
+        },
+        "del": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array",
+          "description": "later samples: voxels cleared since the previous sample, as runs"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "t_ms"
+      ],
+      "description": "SmokeVoxelSample is one step of the cloud's occupancy track: every list is run-length encoded over the sorted linear voxel indices (x + y*32 + z*1024) as flat [start, len, start, len, ...] pairs, one run covering the len consecutive indices start..start+len-1."
+    },
+    "SmokeVoxels": {
+      "properties": {
+        "origin": {
+          "$ref": "#/$defs/Position",
+          "description": "grid min corner, world units"
+        },
+        "cell": {
+          "type": "number",
+          "description": "voxel edge length, game units (12)"
+        },
+        "samples": {
+          "items": {
+            "$ref": "#/$defs/SmokeVoxelSample"
+          },
+          "type": "array",
+          "description": "occupancy over the cloud's lifetime; hold each shape until the next sample"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "origin",
+        "cell",
+        "samples"
+      ],
+      "description": "SmokeVoxels is a smoke cloud's volumetric occupancy on the 32x32x32 voxel grid the server networks per smoke: origin is the grid's world min corner (detonation position minus 192 per axis) and voxel (x,y,z) spans [origin + v*cell, origin + (v+1)*cell] per axis."
     },
     "SprayBullet": {
       "properties": {

@@ -136,6 +136,7 @@ func (g *parseGrenade) toBasic() model.GrenadeBasic {
 		FlightMs:         g.flightMs,
 		ThrowPosition:    g.throwPosition,
 		DetonatePosition: g.detonatePosition,
+		Voxels:           g.voxels,
 	}
 }
 

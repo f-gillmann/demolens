@@ -29,6 +29,7 @@ import (
 	"math"
 	"math/bits"
 
+	"github.com/f-gillmann/demolens/v2/model"
 	"github.com/golang/geo/r3"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/sendtables"
@@ -36,6 +37,9 @@ import (
 
 // edge length of one smoke voxel in game units
 const smokeVoxelSize = 12.0
+
+// minimum spacing between two exported voxel occupancy samples, ms
+const smokeVoxelSampleMs = 1000
 
 // voxelSmoke is the decoded volumetric state of one smoke projectile.
 type voxelSmoke struct {
@@ -50,6 +54,9 @@ type voxelSmoke struct {
 
 	occ      [512]uint64 // 32^3 occupancy bitset, idx = x | y<<5 | z<<10
 	min, max [3]int      // occupied voxel index bounds for the quick reject
+
+	sampledOcc [512]uint64 // occupancy at the last exported voxels sample
+	sampledMs  int64       // round time of that sample, for the min sample spacing
 }
 
 // onSmokeVoxelTables wires the voxel-stream ingestion once net tables exist.
@@ -117,6 +124,69 @@ func (st *parseState) ingestSmokeVoxels(ent sendtables.Entity, vs *voxelSmoke) {
 		}
 		vs.rebuild()
 	}
+	st.sampleSmokeVoxels(ent.ID(), vs)
+}
+
+// sampleSmokeVoxels appends the cloud's current occupied set to its grenade's
+// exported voxels track: the first sample (the full set) once the detonation
+// keyframe is decoded, then a delta (add/del runs against the last exported
+// sample) only when occupancy changed since that sample and at least
+// smokeVoxelSampleMs later (a change suppressed by the spacing gets picked up
+// on a later update), stopping once the cloud starts fading. It only reads the
+// decoded state; the occlusion path is untouched.
+func (st *parseState) sampleSmokeVoxels(entityID int, vs *voxelSmoke) {
+	if !st.opts.GrenadePaths || !vs.ready || vs.fading {
+		return
+	}
+	g := st.grenadeByEntity(entityID)
+	if g == nil {
+		return
+	}
+	now := st.roundMs()
+	if g.voxels != nil && (now-vs.sampledMs < smokeVoxelSampleMs || vs.occ == vs.sampledOcc) {
+		return
+	}
+	sample := model.SmokeVoxelSample{TMs: now}
+	if g.voxels == nil {
+		g.voxels = &model.SmokeVoxels{
+			Origin: model.Position{X: vs.det.X - 16*smokeVoxelSize, Y: vs.det.Y - 16*smokeVoxelSize, Z: vs.det.Z - 16*smokeVoxelSize},
+			Cell:   smokeVoxelSize,
+		}
+		sample.Occupied = voxelRuns(&vs.occ)
+	} else {
+		var add, del [512]uint64
+		for w := range vs.occ {
+			add[w] = vs.occ[w] &^ vs.sampledOcc[w]
+			del[w] = vs.sampledOcc[w] &^ vs.occ[w]
+		}
+		sample.Add = voxelRuns(&add)
+		sample.Del = voxelRuns(&del)
+	}
+	g.voxels.Samples = append(g.voxels.Samples, sample)
+	vs.sampledOcc = vs.occ
+	vs.sampledMs = now
+}
+
+// voxelRuns run-length encodes a 32^3 occupancy bitset over the sorted linear
+// voxel indices as flat [start, len, start, len, ...] pairs, one run covering
+// the len consecutive indices start..start+len-1. Nil for an empty bitset so
+// omitempty drops the field.
+func voxelRuns(occ *[512]uint64) []int {
+	var runs []int
+	prev := -2
+	for w, word := range occ {
+		for word != 0 {
+			idx := w<<6 | bits.TrailingZeros64(word)
+			word &= word - 1
+			if idx == prev+1 {
+				runs[len(runs)-1]++
+			} else {
+				runs = append(runs, idx, 1)
+			}
+			prev = idx
+		}
+	}
+	return runs
 }
 
 // consumeChunks parses complete chunks off the buffer and reports whether any
@@ -209,7 +279,7 @@ func (vs *voxelSmoke) rebuild() {
 	fillInterior(&occ)
 
 	vs.min, vs.max = [3]int{31, 31, 31}, [3]int{0, 0, 0}
-	any := false
+	anyReady := false
 	for w, word := range occ {
 		for word != 0 {
 			idx := w<<6 | bits.TrailingZeros64(word)
@@ -233,11 +303,11 @@ func (vs *voxelSmoke) rebuild() {
 			if z > vs.max[2] {
 				vs.max[2] = z
 			}
-			any = true
+			anyReady = true
 		}
 	}
 	vs.occ = occ
-	vs.ready = any
+	vs.ready = anyReady
 }
 
 // fillInterior marks everything not reachable from the grid boundary through

@@ -100,6 +100,10 @@ type parseGrenade struct {
 	// molotov/incendiary only: the inferno's widest per-flame footprint, captured
 	// at peak extent while polling and emitted as fire_cells.
 	fireCells []model.Position
+
+	// smoke only: the exported voxel-cloud occupancy track, appended by
+	// sampleSmokeVoxels while the grenade_paths stream is on.
+	voxels *model.SmokeVoxels
 }
 
 // shotStatAcc is the per-round, per-(shooter,weapon) tally feeding round.shot_stats.
