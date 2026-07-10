@@ -208,7 +208,10 @@ func (st *parseState) onPlayerFlashed(flash events.PlayerFlashed) {
 
 	self := flash.Attacker.SteamID64 == flash.Player.SteamID64
 	sameTeam := self || flash.Player.Team == flash.Attacker.Team
-	blind := int64(float64(flash.FlashDuration().Milliseconds()) * st.cal.FlashBlindScale)
+	// raw per-victim flash effect duration; blind is the calibrated effective slice
+	// of it, flashDurMs is the untouched fade clock the consumer reconstructs on.
+	flashDurMs := flash.FlashDuration().Milliseconds()
+	blind := int64(float64(flashDurMs) * st.cal.FlashBlindScale)
 
 	// only "fully flashed" players count, i.e. blinded >= 1.1s. friendlies here
 	// means the thrower's own team plus themselves.
@@ -231,7 +234,7 @@ func (st *parseState) onPlayerFlashed(flash events.PlayerFlashed) {
 	// and the flash matrix. self-flashes don't belong in who-blinded-whom.
 	if !self && flash.Projectile != nil && st.grenades.pendingGrenades != nil {
 		if g := st.grenades.pendingGrenades[flash.Projectile.UniqueID()]; g != nil {
-			fp := model.FlashedPlayer{SteamID: flash.Player.SteamID64, BlindMs: blind}
+			fp := model.FlashedPlayer{SteamID: flash.Player.SteamID64, BlindMs: blind, FlashDurationMs: flashDurMs}
 			if vrp := st.pendingPlayers[flash.Player.SteamID64]; vrp != nil {
 				fp.Side = vrp.Side
 			}

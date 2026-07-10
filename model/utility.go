@@ -32,8 +32,12 @@ type UtilityAverages struct {
 
 // FlashedPlayer is one player blinded by a flashbang, with how long.
 type FlashedPlayer struct {
-	SteamID  uint64  `json:"steam_id,string"`
-	Side     string  `json:"side"`                // victim's side
-	BlindMs  int64   `json:"blind_ms"`            // ms
-	MaxAlpha float64 `json:"max_alpha,omitempty"` // peak whiteout 0..255
+	SteamID uint64 `json:"steam_id,string"`
+	Side    string `json:"side"`     // victim's side
+	BlindMs int64  `json:"blind_ms"` // calibrated effective blind time, ms
+	// raw networked flash effect duration, ms: the clock the client whiteout fade
+	// runs on (blind_ms is this scaled by the blind-time calibration). the fade
+	// starts at the grenade's detonate_ms; curve in docs/output.md.
+	FlashDurationMs int64   `json:"flash_duration_ms"`
+	MaxAlpha        float64 `json:"max_alpha,omitempty"` // peak whiteout 0..255
 }

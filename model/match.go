@@ -43,6 +43,7 @@ type Meta struct {
 	IsHltv            bool       `json:"is_hltv"`
 	IsDedicatedServer bool       `json:"is_dedicated_server"`
 	BuildNum          string     `json:"build_num"`
+	C4WaveSpeed       int        `json:"c4_wave_speed,omitempty"` // planted-c4 shockwave speed, game units/sec; present only on post-rework demos (build_num >= 14168), see finalize.go
 	TickRate          float64    `json:"tick_rate"`
 	DurationMs        int64      `json:"duration_ms"`
 	TotalRounds       int        `json:"total_rounds"`

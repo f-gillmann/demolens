@@ -368,7 +368,11 @@
         },
         "blind_ms": {
           "type": "integer",
-          "description": "ms"
+          "description": "calibrated effective blind time, ms"
+        },
+        "flash_duration_ms": {
+          "type": "integer",
+          "description": "raw networked flash effect duration, ms: the clock the client whiteout fade\nruns on (blind_ms is this scaled by the blind-time calibration). the fade\nstarts at the grenade's detonate_ms; curve in docs/output.md."
         },
         "max_alpha": {
           "type": "number",
@@ -380,7 +384,8 @@
       "required": [
         "steam_id",
         "side",
-        "blind_ms"
+        "blind_ms",
+        "flash_duration_ms"
       ],
       "description": "FlashedPlayer is one player blinded by a flashbang, with how long."
     },
@@ -956,6 +961,10 @@
         },
         "build_num": {
           "type": "string"
+        },
+        "c4_wave_speed": {
+          "type": "integer",
+          "description": "planted-c4 shockwave speed, game units/sec; present only on post-rework demos (build_num \u003e= 14168), see finalize.go"
         },
         "tick_rate": {
           "type": "number"

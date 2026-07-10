@@ -3,6 +3,7 @@ package parser
 import (
 	"math"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/f-gillmann/demolens/v2/internal/csdata"
@@ -12,6 +13,16 @@ import (
 
 // how often we poll a live inferno for burn-out
 const fireCheckPeriod = 200 * time.Millisecond
+
+// c4 shockwave constants. the 2026-07-08 update (first demo build c4WaveBuild) made
+// the planted bomb hurt via an expanding euclidean sphere at c4WaveSpeed game units
+// per second: the func_bomb_target bomb_damage_power default, validated on demo
+// arrival ticks. the speed is NOT networked, so we surface the constant on qualifying
+// demos. pre-rework demos hurt every victim on the same tick and carry no wave.
+const (
+	c4WaveSpeed = 3000
+	c4WaveBuild = 14168
+)
 
 // liveInferno is an active fire we poll to catch its burn-out (all flames gone,
 // whether it burned out on its own or got smoked off).
@@ -32,6 +43,11 @@ func (st *parseState) finalizeMatch() {
 	st.match.Meta.TotalRounds = len(st.match.Rounds)
 	st.match.Meta.ServerPlatform = guessSource(st.match.Meta.ServerName)
 	st.match.Meta.DemoType = demoType(st.match.Meta.IsHltv, st.match.Meta.ClientName)
+	// surface the c4 shockwave speed on post-rework demos only. build_num is a string;
+	// a non-numeric value leaves the field absent.
+	if bn, err := strconv.Atoi(st.match.Meta.BuildNum); err == nil && bn >= c4WaveBuild {
+		st.match.Meta.C4WaveSpeed = c4WaveSpeed
+	}
 
 	st.finalizeOutputMeta()
 	st.finalizeScore()

@@ -58,6 +58,8 @@ lack `killer_side`, `killer_position`, `distance`, `killer_speed`, `killer_speed
 A c4 detonation writes one `damages[]` entry per victim (`damage_type: "bomb"`) with no
 `attacker`; the shockwave reaches each victim staggered by distance, so their `t_ms` land
 after `round_end_ms`, at the moment the damage actually applied.
+`meta.c4_wave_speed` is present only on post-rework demos (`build_num >= 14168`) and absent
+on older demos that hurt every victim on the same tick.
 
 Time convention: every round-relative `t_ms` counts from freeze end. The round goes live at t = 0.
 `round_start_ms` is the freeze start, so it is negative; `freeze_end_ms` is always 0;
@@ -113,12 +115,33 @@ for s in voxels.samples:
     # world box of index i: x=i%32, y=(i/32)%32, z=i/1024, min corner origin + (x,y,z)*cell
 ```
 
+## Flash blindness curve
+
+`grenades.flashes[].flashed[]` is per victim: `blind_ms` (calibrated effective blind time),
+`flash_duration_ms` (the raw networked flash effect duration), and `max_alpha` (peak whiteout,
+0..255). Drive the on-screen whiteout fade off `flash_duration_ms`, not `blind_ms`.
+
+The blindness starts at the grenade's `detonate_ms`. With `left = flash_duration_ms - (t_ms - detonate_ms)`
+(all ms) and `A = max_alpha`, the client renders the whiteout alpha at render time `t_ms` as:
+
+```
+left <= 0          : alpha = 0
+left  > 3000       : alpha = A                     (held at full whiteout)
+0 < left <= 3000   : alpha = A * (left/3000)^2     (quadratic fade over the last 3s)
+```
+
+The first ~94ms is a linear 0..A build-up ramp, negligible for all but the shortest flashes.
+
 ## Field notes
 
 **round.bomb** exists once any plant was started; a fake plant is enough, so the completed-plant
 fields (`site`, `planter`, `plant_ms`, `plant_position`) are all omitempty. `defused` / `exploded` are the outcome,
 `defuse_ms` / `defuse_started_ms` / `has_kit` describe the successful defuse.
 `plant_attempts` and `defuse_attempts` list every start, with `aborted` marking fakes and cancels.
+
+**meta.c4_wave_speed** is the planted-c4 shockwave expansion rate in game units per second
+(constant `3000`), emitted only on post-rework demos so consumers can animate the expanding
+ring against the staggered `damage_type: "bomb"` hits without reverse-engineering it.
 
 **round.economy** has one block per side (`CT` / `T`): `equipment_value` and `buy_type`,
 one of `eco` / `semi_eco` / `semi_buy` / `full_buy`.
