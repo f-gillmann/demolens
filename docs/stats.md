@@ -143,7 +143,7 @@ The reported number is the median of what's left.
 
 For per-sighting samples $t_i$ (ms from first seeing the enemy to first damage):
 
-$$\text{TTD} = \operatorname{median}\big\{\, t_i \;:\; 165 \le t_i < 1600 \,\big\}$$
+$$\text{TTD} = \mathrm{median}\big\{\, t_i \;:\; 165 \le t_i < 1600 \,\big\}$$
 
 ### Crosshair placement
 
@@ -154,7 +154,7 @@ clamp just stops a few perfect pre-aims from dragging the average toward zero.
 
 For duels $i$ with view-move angle $\theta_i$ (degrees) and $\theta_{30}$ the player's 30th percentile:
 
-$$\text{Crosshair placement} = \operatorname{mean}_i\ \max(\theta_i,\ \theta_{30})$$
+$$\text{Crosshair placement} = \mathrm{mean}_i\ \max(\theta_i,\ \theta_{30})$$
 
 ## Trades (`trades.go`)
 
