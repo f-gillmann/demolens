@@ -54,8 +54,11 @@ type pv struct {
 	blindFrac   float64   // fraction of the current flash's duration still remaining this frame, 0 if no active flash
 }
 
-// cand is a frustum-passing pair whose expensive los/smoke check is deferred to
-// the parallel pass.
+// cand is a frustum-passing pair whose expensive mesh raycasts are deferred to
+// the batched parallel pass. The cheap occlusion gates (smoke, fire, third-party
+// bodies) run eagerly at capture time because they read per-frame mutable state
+// (voxel clouds, live infernos, player positions) that the deferred pass must
+// not touch; their results ride along in noSmoke/visGate/needVis.
 type cand struct {
 	en         *engagement
 	sEye, eEye r3.Vector
@@ -65,9 +68,31 @@ type cand struct {
 	sBlind     float64   // shooter's remaining flash blindness (seconds) this frame, for the aim-debug dump only
 	sBlindFrac float64   // fraction of the shooter's current flash still remaining this frame, gates the sighting clocks
 	angOff     float64   // degrees between shooter view and dir-to-victim, for the per-metric fov gate
+	noSmoke    bool      // captured at frame time: sightline clear of active smoke clouds
+	needVis    bool      // vis is consumed this frame (inside a metric fov, or the aim-debug dump wants it)
+	visGate    bool      // captured cheap gates for vis: noSmoke and not fire- or body-blocked
 	vis        bool      // dense any-part losAnyPartFeet visibility, minus smoke (crosshair detection)
 	visN       bool      // narrow 9-ray losClear visibility, minus smoke (TTD detection)
 	visTorso   bool      // strict torso-column losTorso visibility, minus smoke; aim-debug probe only, filled only when AimDebugPath set
+}
+
+// batchFrame delimits one frame's slice of the deferred los batch: which cands
+// and which not-visible engagement resets belong to it, and the frame's time.
+type batchFrame struct {
+	now                time.Duration
+	candLo, candHi     int
+	notVisLo, notVisHi int
+}
+
+// losBatch buffers frames of sighting work so the mesh raycasts, ~all of the
+// runtime, fan out across every core instead of one frame's handful of pairs.
+// Machine updates replay strictly in frame order at flush, and every reader of
+// engagement state (player-hurt, weapon-fire, round reset) drains the batch
+// first, so the observable state at any read matches the unbatched run exactly.
+type losBatch struct {
+	cands  []cand
+	frames []batchFrame
+	notVis []*engagement
 }
 
 // parseGrenade is the per-round working accumulator for one thrown grenade. It
@@ -214,7 +239,7 @@ type visionState struct {
 	voxelSmokes  map[int]*voxelSmoke       // entityID to decoded voxel stream, removed on entity destroy
 	engagements  map[[2]uint64]*engagement // (shooter,enemy) sighting state, wiped each round
 	live         []pv                      // alive players' eye+view, rebuilt per frame
-	cands        []cand                    // frustum-passing pairs deferred to the parallel los pass
+	batch        losBatch                  // frames of deferred mesh raycasts + machine updates
 	byID         map[uint64]*common.Player // alive players this frame, id->player, for the aim-debug spotted lookup; nil unless AimDebugPath set
 }
 
@@ -289,7 +314,11 @@ func newParseState(parsed dem.Parser, opts Options, match *model.Match) *parseSt
 			voxelSmokes:  map[int]*voxelSmoke{},
 			engagements:  map[[2]uint64]*engagement{},
 			live:         make([]pv, 0, 10),
-			cands:        make([]cand, 0, 32),
+			batch: losBatch{
+				cands:  make([]cand, 0, 1024),
+				frames: make([]batchFrame, 0, 256),
+				notVis: make([]*engagement, 0, 1024),
+			},
 		},
 		grenades: grenadeState{
 			flashLead:  map[uint64]pendingFlash{},

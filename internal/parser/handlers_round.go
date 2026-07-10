@@ -113,6 +113,7 @@ func (st *parseState) onFreezetimeEnd(_ events.RoundFreezetimeEnd) {
 		st.vision.mesh, _ = geom.Load(geom.MapFile(st.opts.MapsDir, st.match.Meta.WorkshopID, st.match.Meta.MapName))
 	}
 
+	st.drainLOS()                                       // pending sighting frames reference the old round's engagements
 	st.vision.engagements = map[[2]uint64]*engagement{} // none of these carry across rounds
 	st.grenades.flashLead = map[uint64]pendingFlash{}
 	st.grenades.flashAlpha = map[flashAlphaKey]float64{}

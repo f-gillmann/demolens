@@ -309,6 +309,10 @@ func (st *parseState) onPlayerHurt(hurt events.PlayerHurt) {
 		return
 	}
 
+	// the ttd/crosshair close below reads engagement state: replay any deferred
+	// sighting frames first so it sees exactly the per-frame state.
+	st.drainLOS()
+
 	// aim-debug dump: raw damage row, captured before the clamp logic below. Off by
 	// default; only runs when the option allocated st.aimDump.
 	if st.aimDump != nil && st.roundLive && st.pending != nil && hurt.Attacker != nil && hurt.Player != nil {
@@ -460,6 +464,10 @@ func (st *parseState) onWeaponFire(fire events.WeaponFire) {
 	if st.parsed.GameState().IsWarmupPeriod() || fire.Shooter == nil || !csdata.IsGun(fire.Weapon) {
 		return
 	}
+
+	// the vision gates below read engagement state (lastSeen): replay any deferred
+	// sighting frames first so they see exactly the per-frame state.
+	st.drainLOS()
 
 	// count every gun shot, exit shots included, so the accuracy denominator
 	// spans the same scope as hits (which include post-round damage).

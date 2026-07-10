@@ -92,11 +92,11 @@ func losTorso(mesh *geom.Mesh, eyeFrom, eyeTo r3.Vector) bool {
 const smokeRadius = 144.0
 
 // visual lifetime of a CS2 smoke cloud from detonation: full density until
-// ~15s, edge-thinning until it is gone at 18s. The SmokeExpired entity event
+// ~16s, edge-thinning until it is gone at 18s. The SmokeExpired entity event
 // fires ~22s in, ~4s after the cloud visually disappeared, so occlusion must
 // track this clock and not the entity's.
 const (
-	smokeFullMs = 18000.0
+	smokeFullMs = 16000.0
 	smokeGoneMs = 18000.0
 )
 
@@ -314,5 +314,45 @@ func enemyInFrustum(viewFwd, dir r3.Vector, hHalfDeg float64) bool {
 	vHalfDeg := math.Atan(math.Tan(hHalfDeg*math.Pi/180)*9.0/16.0) * 180 / math.Pi
 	h := math.Atan2(dir.Dot(right), f) * 180 / math.Pi
 	v := math.Atan2(dir.Dot(up), f) * 180 / math.Pi
+	return math.Abs(h) <= hHalfDeg && math.Abs(v) <= vHalfDeg
+}
+
+// frustumVHalfDeg is enemyInFrustum's 16:9 vertical half-angle derivation, split
+// out so the per-frame pair loop computes it once (it depends only on the fov).
+func frustumVHalfDeg(hHalfDeg float64) float64 {
+	return math.Atan(math.Tan(hHalfDeg*math.Pi/180)*9.0/16.0) * 180 / math.Pi
+}
+
+// frustumBasis is a shooter's precomputed view basis for enemyInFrustum's test:
+// the basis depends only on the shooter's view vector, so the pair loop derives
+// it once per shooter instead of once per enemy. ok is false for the degenerate
+// straight up/down view, where the original test always answers false.
+type frustumBasis struct {
+	fwd, right, up r3.Vector
+	ok             bool
+}
+
+func makeFrustumBasis(viewFwd r3.Vector) frustumBasis {
+	right := viewFwd.Cross(r3.Vector{X: 0, Y: 0, Z: 1})
+	if right.Norm() < 1e-9 {
+		return frustumBasis{}
+	}
+	right = right.Normalize()
+	up := right.Cross(viewFwd).Normalize()
+	return frustumBasis{fwd: viewFwd, right: right, up: up, ok: true}
+}
+
+// contains mirrors enemyInFrustum exactly (same operations, same order) over the
+// precomputed basis, so its boolean matches the original bit for bit.
+func (fb frustumBasis) contains(dir r3.Vector, hHalfDeg, vHalfDeg float64) bool {
+	f := dir.Dot(fb.fwd)
+	if f <= 0 {
+		return false // behind the player
+	}
+	if !fb.ok {
+		return false // looking straight up/down
+	}
+	h := math.Atan2(dir.Dot(fb.right), f) * 180 / math.Pi
+	v := math.Atan2(dir.Dot(fb.up), f) * 180 / math.Pi
 	return math.Abs(h) <= hHalfDeg && math.Abs(v) <= vHalfDeg
 }

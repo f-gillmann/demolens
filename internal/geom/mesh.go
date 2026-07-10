@@ -21,7 +21,12 @@ type Mesh struct {
 	order []int // triangle indices grouped by leaf
 }
 
-type triangle struct{ a, b, c r3.Vector }
+// e1/e2 are b-a and c-a, precomputed once at Load: the mesh is static, so these
+// never change and would otherwise be recomputed on every blocks() ray test.
+type triangle struct {
+	a, b, c r3.Vector
+	e1, e2  r3.Vector
+}
 
 // MapFile returns where a map's collision file lives. Workshop maps key off the
 // addon id since two remakes can share a name; official maps key off the name.
@@ -62,11 +67,10 @@ func Load(path string) (*Mesh, error) {
 	m := &Mesh{tris: make([]triangle, count)}
 	for i := range m.tris {
 		v := verts[i*9:]
-		m.tris[i] = triangle{
-			a: r3.Vector{X: float64(v[0]), Y: float64(v[1]), Z: float64(v[2])},
-			b: r3.Vector{X: float64(v[3]), Y: float64(v[4]), Z: float64(v[5])},
-			c: r3.Vector{X: float64(v[6]), Y: float64(v[7]), Z: float64(v[8])},
-		}
+		a := r3.Vector{X: float64(v[0]), Y: float64(v[1]), Z: float64(v[2])}
+		b := r3.Vector{X: float64(v[3]), Y: float64(v[4]), Z: float64(v[5])}
+		c := r3.Vector{X: float64(v[6]), Y: float64(v[7]), Z: float64(v[8])}
+		m.tris[i] = triangle{a: a, b: b, c: c, e1: b.Sub(a), e2: c.Sub(a)}
 	}
 
 	m.buildBVH()
@@ -104,8 +108,8 @@ const epsilon = 1e-7
 
 // Moeller-Trumbore: does the segment orig+dir (t in 0..1) hit this triangle.
 func (t triangle) blocks(orig, dir r3.Vector) bool {
-	edge1 := t.b.Sub(t.a)
-	edge2 := t.c.Sub(t.a)
+	edge1 := t.e1
+	edge2 := t.e2
 	pvec := dir.Cross(edge2)
 	det := edge1.Dot(pvec)
 	if det > -epsilon && det < epsilon {

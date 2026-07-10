@@ -12,7 +12,7 @@ import (
 
 // below this many candidate sightlines the goroutine dispatch costs more than the
 // parallel los work saves, so run them inline
-const losParallelThreshold = 16
+const losParallelThreshold = 2
 
 // onPlayerFrames samples player pos + state each frame into the round's positions
 // stream (opt-in), throttled so output stays bounded. The capture spans the last
@@ -171,9 +171,30 @@ func (st *parseState) onSighting(_ events.FrameDone) {
 		maxFov = st.cal.CSConeDeg
 	}
 
-	st.vision.cands = st.vision.cands[:0]
+	// vis's cheap gates (smoke, fire, third-party bodies) read per-frame mutable
+	// state, so they run eagerly here at capture time; only the raycasts against
+	// the static mesh are deferred into the cross-frame batch. metricFov bounds
+	// where vis is ever consumed (the wider CSConeDeg band feeds visN alone).
+	metricFov := st.cal.TTDFovDeg
+	if st.cal.CrosshairFovDeg > metricFov {
+		metricFov = st.cal.CrosshairFovDeg
+	}
+	var fireCells []r3.Vector
+	for _, li := range st.grenades.liveInfernos {
+		for _, fire := range li.inferno.Fires().Active().List() {
+			fireCells = append(fireCells, fire.Vector)
+		}
+	}
+
+	b := &st.vision.batch
+	frame := batchFrame{now: now, candLo: len(b.cands), notVisLo: len(b.notVis)}
+
+	// the vertical half-angle and the shooter basis depend only on maxFov and each
+	// shooter's view, so derive them once per frame / per shooter instead of per pair.
+	vHalf := frustumVHalfDeg(maxFov)
 	for i := range st.vision.live {
 		s := st.vision.live[i]
+		sBasis := makeFrustumBasis(s.view)
 		for j := range st.vision.live {
 			e := st.vision.live[j]
 			if e.team == s.team {
@@ -187,18 +208,41 @@ func (st *parseState) onSighting(_ events.FrameDone) {
 				st.vision.engagements[key] = eng
 			}
 
-			// cheap frustum/mesh gate so only a handful of los rays fire per frame; the
-			// los+smoke raycast is pass 2 and the sighting machines are pass 3.
-			if enemyInFrustum(s.view, dir, maxFov) && st.vision.mesh != nil {
-				st.vision.cands = append(st.vision.cands, cand{en: eng, sEye: s.eye, eEye: e.eye, eFeet: e.feet, sView: s.view, sID: s.id, vID: e.id, sBlind: s.blindRemain, sBlindFrac: s.blindFrac, angOff: s.view.Angle(dir).Degrees()})
+			// cheap frustum/mesh gate so only frustum-passing pairs cost los rays; the
+			// mesh raycasts are the deferred batch, the machines replay at flush. the
+			// not-visible reset reads machine state, so it defers with the batch too.
+			if sBasis.contains(dir, maxFov, vHalf) && st.vision.mesh != nil {
+				c := cand{en: eng, sEye: s.eye, eEye: e.eye, eFeet: e.feet, sView: s.view, sID: s.id, vID: e.id, sBlind: s.blindRemain, sBlindFrac: s.blindFrac, angOff: s.view.Angle(dir).Degrees()}
+				c.noSmoke = !smokeBlocked(c.sEye, c.eEye, st.vision.activeSmokes, now)
+				c.needVis = c.angOff <= metricFov || st.aimDump != nil
+				if c.needVis && c.noSmoke {
+					c.visGate = !fireBlocked(c.sEye, c.eEye, fireCells) &&
+						!playerBlocked(c.sEye, c.eEye, st.vision.live, c.sID, c.vID)
+				}
+				b.cands = append(b.cands, c)
 			} else {
-				st.notVisible(eng, now)
+				b.notVis = append(b.notVis, eng)
 			}
 		}
 	}
 
-	st.runLOSPass()
-	st.runSightingMachines(now)
+	frame.candHi, frame.notVisHi = len(b.cands), len(b.notVis)
+	if frame.candHi > frame.candLo || frame.notVisHi > frame.notVisLo {
+		b.frames = append(b.frames, frame)
+	}
+
+	if st.aimDump == nil {
+		// bound the buffer; consumers of engagement state drain it themselves.
+		if len(b.cands) >= losBatchFlushCands || len(b.frames) >= losBatchFlushFrames {
+			st.drainLOS()
+		}
+		return
+	}
+
+	// aim-debug wants one row per candidate per frame, off the flushed values, so
+	// batching is a per-frame drain here: flush, emit this frame's rows, reset.
+	st.flushLOS()
+	defer st.resetLOSBatch()
 
 	// aim-debug dump: one row per candidate this frame (free when the option is off).
 	if st.aimDump != nil && st.roundLive && st.pending != nil {
@@ -210,8 +254,8 @@ func (st *parseState) onSighting(_ events.FrameDone) {
 				fireCells = append(fireCells, fire.Vector)
 			}
 		}
-		for k := range st.vision.cands {
-			c := &st.vision.cands[k]
+		for k := frame.candLo; k < frame.candHi; k++ {
+			c := &b.cands[k]
 			v, s := st.vision.byID[c.vID], st.vision.byID[c.sID]
 			spotted := false
 			if v != nil && s != nil {
@@ -237,82 +281,105 @@ func (st *parseState) onSighting(_ events.FrameDone) {
 	}
 }
 
-// runLOSPass is pass 2: it fills both visibilities per cand. vis is the dense
-// any-part silhouette (TTD / crosshair), gated by smoke, active inferno fire and
-// third-party player bodies; visN is the narrow 9-ray silhouette (counter-strafe /
-// spotted marker), gated by smoke only so it stays byte-identical to its calibration.
-// The active fire cells are gathered once up front; mesh/activeSmokes/live and that
-// slice are read-only and each goroutine writes disjoint cand fields, so chunking is
-// safe above losParallelThreshold, else inline.
-func (st *parseState) runLOSPass() {
-	// gather every live inferno's active fire-cell positions once this frame, so the
-	// fire-occlusion probe runs off a single read-only slice shared by the workers
-	// below (no per-cand rebuild, no data race). empty when no inferno is live, in
-	// which case fireBlocked returns false cheaply.
-	var fireCells []r3.Vector
-	for _, li := range st.grenades.liveInfernos {
-		for _, fire := range li.inferno.Fires().Active().List() {
-			fireCells = append(fireCells, fire.Vector)
-		}
-	}
-	now := st.parsed.CurrentTime()
+// batch flush bounds: cands cap the raycast buffer's memory, frames cap how
+// long a quiet stretch (few cands, but per-frame notVisible resets) can defer.
+const (
+	losBatchFlushCands  = 4096
+	losBatchFlushFrames = 2048
+)
 
-	if len(st.vision.cands) >= losParallelThreshold {
+// drainLOS flushes and resets the deferred los batch. Every reader of
+// engagement state outside the frame pass (player-hurt, weapon-fire, the
+// round reset) must call this first so it observes exactly the state the
+// unbatched per-frame run would have produced.
+func (st *parseState) drainLOS() {
+	st.flushLOS()
+	st.resetLOSBatch()
+}
+
+// flushLOS runs the batch: first every buffered cand's mesh raycasts, fanned
+// out across all cores (the mesh is immutable and each cand's rays depend only
+// on its own captured snapshot, so chunking is safe); then the sighting
+// machines and not-visible resets replay sequentially in frame order, which
+// keeps every engagement's state transitions identical to the per-frame run.
+func (st *parseState) flushLOS() {
+	b := &st.vision.batch
+	if len(b.frames) == 0 {
+		return
+	}
+
+	if len(b.cands) >= losParallelThreshold {
 		workers := runtime.GOMAXPROCS(0)
-		if workers > len(st.vision.cands) {
-			workers = len(st.vision.cands)
+		if workers > len(b.cands) {
+			workers = len(b.cands)
 		}
-		chunk := (len(st.vision.cands) + workers - 1) / workers
+		chunk := (len(b.cands) + workers - 1) / workers
 		var wg sync.WaitGroup
 		for w := 0; w < workers; w++ {
 			lo := w * chunk
-			if lo >= len(st.vision.cands) {
+			if lo >= len(b.cands) {
 				break
 			}
 			hi := lo + chunk
-			if hi > len(st.vision.cands) {
-				hi = len(st.vision.cands)
+			if hi > len(b.cands) {
+				hi = len(b.cands)
 			}
 			wg.Add(1)
 			go func(lo, hi int) {
 				defer wg.Done()
 				for k := lo; k < hi; k++ {
-					c := &st.vision.cands[k]
-					noSmoke := !smokeBlocked(c.sEye, c.eEye, st.vision.activeSmokes, now)
-					c.vis = losAnyPartFeet(st.vision.mesh, c.sEye, c.eFeet) && noSmoke &&
-						!fireBlocked(c.sEye, c.eEye, fireCells) &&
-						!playerBlocked(c.sEye, c.eEye, st.vision.live, c.sID, c.vID)
-					c.visN = losClear(st.vision.mesh, c.sEye, c.eEye) && noSmoke
-					if st.opts.AimDebugPath != "" {
-						c.visTorso = losTorso(st.vision.mesh, c.sEye, c.eEye) && noSmoke
-					}
+					st.losRays(&b.cands[k])
 				}
 			}(lo, hi)
 		}
 		wg.Wait()
 	} else {
-		for k := range st.vision.cands {
-			c := &st.vision.cands[k]
-			noSmoke := !smokeBlocked(c.sEye, c.eEye, st.vision.activeSmokes, now)
-			c.vis = losAnyPartFeet(st.vision.mesh, c.sEye, c.eFeet) && noSmoke &&
-				!fireBlocked(c.sEye, c.eEye, fireCells) &&
-				!playerBlocked(c.sEye, c.eEye, st.vision.live, c.sID, c.vID)
-			c.visN = losClear(st.vision.mesh, c.sEye, c.eEye) && noSmoke
-			if st.opts.AimDebugPath != "" {
-				c.visTorso = losTorso(st.vision.mesh, c.sEye, c.eEye) && noSmoke
-			}
+		for k := range b.cands {
+			st.losRays(&b.cands[k])
+		}
+	}
+
+	for i := range b.frames {
+		f := &b.frames[i]
+		st.runSightingMachines(b.cands[f.candLo:f.candHi], f.now)
+		for _, eng := range b.notVis[f.notVisLo:f.notVisHi] {
+			st.notVisible(eng, f.now)
 		}
 	}
 }
 
+func (st *parseState) resetLOSBatch() {
+	b := &st.vision.batch
+	b.cands = b.cands[:0]
+	b.frames = b.frames[:0]
+	b.notVis = b.notVis[:0]
+}
+
+// losRays fills one cand's visibilities from the static mesh. The cheap gates
+// were captured at frame time (noSmoke/visGate/needVis), so a blocked or
+// never-consumed sightline costs no rays here; each gate is pure, so the
+// short-circuit cannot change the resulting booleans.
+func (st *parseState) losRays(c *cand) {
+	if c.needVis {
+		c.vis = c.visGate && losAnyPartFeet(st.vision.mesh, c.sEye, c.eFeet)
+	} else {
+		c.vis = false
+	}
+	c.visN = c.noSmoke && losClear(st.vision.mesh, c.sEye, c.eEye)
+	if st.opts.AimDebugPath != "" {
+		c.visTorso = c.noSmoke && losTorso(st.vision.mesh, c.sEye, c.eEye)
+	}
+}
+
 // runSightingMachines is pass 3 (sequential): the two decoupled sighting state
-// machines over each cand. TTD uses the narrow los + its fov/gap/debounce; crosshair
-// uses the dense los + its fov/gap/debounce and re-anchors its appearance view at the
-// start of each fresh visible window (peek). Each en is touched once per frame (a pair
-// is a cand or a non-cand, never both), so pair order doesn't change the final state.
-func (st *parseState) runSightingMachines(now time.Duration) {
-	for k := range st.vision.cands {
-		c := &st.vision.cands[k]
+// machines over one frame's cands. TTD uses the narrow los + its fov/gap/debounce;
+// crosshair uses the dense los + its fov/gap/debounce and re-anchors its appearance
+// view at the start of each fresh visible window (peek). Each en is touched once per
+// frame (a pair is a cand or a non-cand, never both), so pair order doesn't change
+// the final state.
+func (st *parseState) runSightingMachines(cands []cand, now time.Duration) {
+	for k := range cands {
+		c := &cands[k]
 		eng := c.en
 
 		// shared recently-seen marker for seesTarget (counter-strafe / spotted): the
