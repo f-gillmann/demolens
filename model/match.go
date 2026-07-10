@@ -71,7 +71,7 @@ type Round struct {
 	Players      []RoundPlayer  `json:"players"`
 	Kills        []RoundKill    `json:"kills"`                // live-round kill timeline, enriched with duel semantics
 	ExitKills    []RoundKill    `json:"exit_kills,omitempty"` // post-round kills
-	Damages      []Damage       `json:"damages"`              // live-round damage events
+	Damages      []Damage       `json:"damages"`              // live-round damage events, plus the post-round c4 detonation hits
 	ShotStats    []ShotStat     `json:"shot_stats,omitempty"` // core per-player-per-weapon aggregate
 	Grenades     Grenades       `json:"grenades"`             // typed buckets
 	Pickups      []WeaponPickup `json:"pickups,omitempty"`    // TRUE pickups only (original_owner != holder)
@@ -331,8 +331,8 @@ func (k RoundKill) KillerID() uint64 {
 }
 
 type Damage struct {
-	TMs          int64  `json:"t_ms"` // since round start, ms
-	Attacker     uint64 `json:"attacker,string"`
+	TMs          int64  `json:"t_ms"`                      // since round start, ms; a c4 detonation hit lands past round_end_ms (shockwave travel)
+	Attacker     uint64 `json:"attacker,string,omitempty"` // absent for the c4 detonation (no player attacker)
 	Victim       uint64 `json:"victim,string"`
 	HealthDamage int    `json:"health_damage"` // capped at the victim's remaining HP
 	ArmorDamage  int    `json:"armor_damage"`

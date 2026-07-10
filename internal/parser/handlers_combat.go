@@ -325,14 +325,28 @@ func (st *parseState) onPlayerHurt(hurt events.PlayerHurt) {
 	}
 
 	if hurt.Attacker == nil || hurt.Attacker.SteamID64 == 0 {
+		st.recordBombDamage(hurt)
 		return
 	}
 
 	st.sampleAimOnHit(hurt)
 
-	// cap cumulative health damage against one (round, victim) life at 100.
-	// demoinfocs reports full pre-tick HP on a killing shotgun pellet instead of
-	// the remaining HP, overcounting a multi-pellet kill; a no-op for correct hits.
+	dmg := st.clampVictimDamage(hurt)
+
+	st.attributeDamage(hurt, dmg)
+
+	// timeline, live round only. trade/clutch analysis reads this.
+	if st.roundLive {
+		st.markFirstContact()
+		st.pending.Damages = append(st.pending.Damages, damageEvent(hurt, st.parsed.CurrentTime()-st.roundStart, dmg, st.opts.PlayerFrames))
+	}
+}
+
+// clampVictimDamage caps cumulative health damage against one (round, victim) life
+// at 100. demoinfocs reports full pre-tick HP on a killing shotgun pellet instead of
+// the remaining HP, overcounting a multi-pellet kill, and the c4 detonation reports
+// the raw wave value (166 observed on a full-hp victim); a no-op for correct hits.
+func (st *parseState) clampVictimDamage(hurt events.PlayerHurt) int {
 	dmg := hurt.HealthDamageTaken
 	if hurt.Player != nil {
 		vid := hurt.Player.SteamID64
@@ -345,14 +359,20 @@ func (st *parseState) onPlayerHurt(hurt events.PlayerHurt) {
 		}
 		st.dmgToVictim[vid] += dmg
 	}
+	return dmg
+}
 
-	st.attributeDamage(hurt, dmg)
-
-	// timeline, live round only. trade/clutch analysis reads this.
-	if st.roundLive {
-		st.markFirstContact()
-		st.pending.Damages = append(st.pending.Damages, damageEvent(hurt, st.parsed.CurrentTime()-st.roundStart, dmg, st.opts.PlayerFrames))
+// recordBombDamage keeps a planted-c4 detonation hit in the damage timeline. The
+// shockwave hurts carry a nil attacker (no player dealt them) and land after
+// bomb_exploded has flipped roundLive off (the wave reaches each victim staggered
+// by distance, up to ~1s past the round end), so both gates in onPlayerHurt would
+// drop them. Any other attacker-less hurt (fall damage) stays dropped as before.
+func (st *parseState) recordBombDamage(hurt events.PlayerHurt) {
+	if st.pending == nil || hurt.Player == nil || hurt.Weapon == nil || hurt.Weapon.Type != common.EqBomb {
+		return
 	}
+	dmg := st.clampVictimDamage(hurt)
+	st.pending.Damages = append(st.pending.Damages, damageEvent(hurt, st.parsed.CurrentTime()-st.roundStart, dmg, st.opts.PlayerFrames))
 }
 
 // sampleAimOnHit feeds the aim-duel calibration off a hit on an enemy. TTD closes on

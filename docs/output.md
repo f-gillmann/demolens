@@ -55,6 +55,9 @@ Per-kill fields appear only on kills they apply to: `traded`, `traded_by`, `poss
 `killer` is `null` when `kind` is not `player` (bomb, world, suicide), and those kills also
 lack `killer_side`, `killer_position`, `distance`, `killer_speed`, `killer_speed_ratio`.
 `damages[].attacker_position` / `victim_position` are set only when the positions stream is on.
+A c4 detonation writes one `damages[]` entry per victim (`damage_type: "bomb"`) with no
+`attacker`; the shockwave reaches each victim staggered by distance, so their `t_ms` land
+after `round_end_ms`, at the moment the damage actually applied.
 
 Time convention: every round-relative `t_ms` counts from freeze end. The round goes live at t = 0.
 `round_start_ms` is the freeze start, so it is negative; `freeze_end_ms` is always 0;

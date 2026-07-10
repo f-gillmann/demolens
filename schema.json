@@ -166,10 +166,11 @@
       "properties": {
         "t_ms": {
           "type": "integer",
-          "description": "since round start, ms"
+          "description": "since round start, ms; a c4 detonation hit lands past round_end_ms (shockwave travel)"
         },
         "attacker": {
-          "type": "string"
+          "type": "string",
+          "description": "absent for the c4 detonation (no player attacker)"
         },
         "victim": {
           "type": "string"
@@ -205,7 +206,6 @@
       "type": "object",
       "required": [
         "t_ms",
-        "attacker",
         "victim",
         "health_damage",
         "armor_damage",
@@ -1514,7 +1514,7 @@
             "$ref": "#/$defs/Damage"
           },
           "type": "array",
-          "description": "live-round damage events"
+          "description": "live-round damage events, plus the post-round c4 detonation hits"
         },
         "shot_stats": {
           "items": {

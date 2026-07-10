@@ -43,8 +43,32 @@ func sortStreams(s *model.RoundStreams, period time.Duration) {
 		if a.Item != b.Item {
 			return a.Item < b.Item
 		}
-		return a.LastOwner < b.LastOwner
+		if a.LastOwner != b.LastOwner {
+			return a.LastOwner < b.LastOwner
+		}
+		// after a side swap the same player can leave two same-name items on the
+		// ground at t=0 (last half's gun plus the fresh spawn one), tying all three
+		// keys above; without a tiebreak their order is map-iteration random and the
+		// output is not byte-reproducible. The seed position separates them.
+		return groundItemSeedLess(a.Positions, b.Positions)
 	})
+}
+
+// groundItemSeedLess orders two ground stints by their seed (first) position sample,
+// x then y then z; a track-less stint sorts first. Positions are exact parsed floats,
+// so two physically distinct items always differ.
+func groundItemSeedLess(a, b []model.GroundItemFrame) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return len(a) < len(b)
+	}
+	pa, pb := a[0].Position, b[0].Position
+	if pa.X != pb.X {
+		return pa.X < pb.X
+	}
+	if pa.Y != pb.Y {
+		return pa.Y < pb.Y
+	}
+	return pa.Z < pb.Z
 }
 
 // compressPositions collapses runs of byte-identical consecutive per-player frames
