@@ -857,7 +857,7 @@
         },
         "class": {
           "type": "string",
-          "description": "pistol / smg / heavy / rifle"
+          "description": "pistol / smg / heavy / rifle / sniper"
         },
         "count": {
           "type": "integer"
@@ -893,7 +893,7 @@
         },
         "schema_version": {
           "type": "integer",
-          "description": "const 6"
+          "description": "const 7"
         },
         "meta": {
           "$ref": "#/$defs/Meta"
@@ -943,7 +943,7 @@
         },
         "game_mode": {
           "type": "string",
-          "description": "competitive / premier / wingman / ... valve demos only, often empty"
+          "description": "competitive / premier / wingman / ... from the game_type/game_mode convars. When those are absent (Valve matchmaking demos) a fallback reports \"competitive\" only for a queued-matchmaking 5v5 MR12 game (premier is indistinguishable, same as the convar path) and leaves wingman/casual/non-Valve demos empty; it never overrides a convar-derived value."
         },
         "demo_type": {
           "type": "string",
@@ -1541,7 +1541,7 @@
             "$ref": "#/$defs/WeaponPickup"
           },
           "type": "array",
-          "description": "TRUE pickups only (original_owner != holder)"
+          "description": "real transfers between players; buys and same-player events are excluded, see WeaponPickup"
         },
         "bomb": {
           "$ref": "#/$defs/Bomb",
@@ -1625,7 +1625,7 @@
         },
         "weapon_class": {
           "type": "string",
-          "description": "pistol / smg / rifle / heavy / \"\" for bomb/world"
+          "description": "pistol / smg / rifle / sniper / heavy / \"\" for bomb/world"
         },
         "kind": {
           "type": "string",
@@ -2304,7 +2304,7 @@
         "weapon",
         "t_ms"
       ],
-      "description": "WeaponPickup is one TRUE weapon pickup in a round: the picked-up gun's original_owner differs from the holder who picked it up."
+      "description": "WeaponPickup is one item pickup in a round: a gun or grenade transferred from another player (original_owner set and different from the holder)."
     },
     "WeaponSpray": {
       "properties": {

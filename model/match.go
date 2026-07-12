@@ -5,7 +5,7 @@ type SteamIDList []uint64
 
 type Match struct {
 	FileHash      string   `json:"file_hash"`      // SHA-256 of the demo bytes
-	SchemaVersion int      `json:"schema_version"` // const 6
+	SchemaVersion int      `json:"schema_version"` // const 7
 	Meta          Meta     `json:"meta"`
 	Players       []Player `json:"players"`
 	Rounds        []Round  `json:"rounds"`

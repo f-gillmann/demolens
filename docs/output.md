@@ -6,7 +6,7 @@ gating, absence rules, encodings, layout conventions. How the numbers are comput
 
 ## Top-level layout
 
-The document root is `meta`, `players`, `rounds`, `stats`, `file_hash` (SHA-256 of the demo bytes), and `schema_version` (currently 6).
+The document root is `meta`, `players`, `rounds`, `stats`, `file_hash` (SHA-256 of the demo bytes), and `schema_version` (currently 7).
 
 The root `stats` block holds the match-level aggregates: `duel_pairs` (killer/victim head-to-head),
 `flash_pairs` (who blinded whom), and `match_lifecycle` (connect/disconnect/bot events).

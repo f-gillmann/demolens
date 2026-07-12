@@ -37,7 +37,7 @@ type liveInferno struct {
 // finalizeMatch runs the post-parse aggregation: match meta, duel matrix, and the
 // per-player counter-strafe/spotted/spray/TTD/crosshair stats.
 func (st *parseState) finalizeMatch() {
-	st.match.SchemaVersion = 6
+	st.match.SchemaVersion = 7
 	st.match.Meta.TickRate = st.parsed.TickRate()
 	st.match.Meta.DurationMs = st.parsed.CurrentTime().Milliseconds()
 	st.match.Meta.TotalRounds = len(st.match.Rounds)
