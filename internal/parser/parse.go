@@ -26,7 +26,7 @@ type Options struct {
 	PlayerFrames bool        // "positions" stream: sample player pos + state each frame
 	Shots        bool        // "shots" stream: per-shot shooter geometry
 	GrenadePaths bool        // "grenade_paths" stream: grenade trajectories + bounces
-	Inventory    bool        // "inventory" stream: mid-round inventory change log
+	Inventory    bool        // "inventory" stream: loadout change log, snapshotted on weapon pickup/buy and at first-contact/bomb-plant/round-end
 	GroundItems  bool        // "ground_items" stream: world weapons at phase boundaries
 	PositionsHz  float64     // positions-stream sample rate. <=0 falls back to defaultPositionsHz (4)
 	Tier         string      // optional preset: core / detail / full. empty means full.

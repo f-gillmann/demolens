@@ -100,7 +100,7 @@ func playerProp(pl *common.Player, prop string) float64 {
 // proximity metrics like trade opportunities.
 func aliveSnapshot(gs dem.GameState) []model.AlivePlayer {
 	var alive []model.AlivePlayer
-	for _, pl := range gs.Participants().Playing() {
+	for _, pl := range playingStable(gs) {
 		if !pl.IsAlive() {
 			continue
 		}

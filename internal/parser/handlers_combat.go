@@ -604,27 +604,90 @@ func (st *parseState) recordCounterStrafe(fire events.WeaponFire, csVisible bool
 	}
 }
 
-// onItemPickup records a true pickup: a weapon (gun or grenade) whose original
-// owner isn't the holder (buys/own re-grabs have owner 0 or self, and stay
-// filtered out). FromEnemy means the original owner was on the opposing side this
-// round. Live round only.
+// reissueTypes are the weapon types CS2 automatically hands every player at the
+// start of every round: the knife (every skin variant normalizes to the single
+// EqKnife type) and whichever starting pistol they're issued (Glock-18 for T,
+// USP-S or P2000 for CT, depending on the player's client preference). A
+// self-stamped ItemPickup (original_owner == holder) for one of these is that
+// automatic reissue, not a real player action.
+var reissueTypes = map[common.EquipmentType]bool{
+	common.EqKnife: true,
+	common.EqGlock: true,
+	common.EqUSP:   true,
+	common.EqP2000: true,
+}
+
+// pickupKind is what an ItemPickup event actually represents.
+type pickupKind int
+
+const (
+	// pickupBuy is a fresh acquisition: original_owner is unset (0), or it's
+	// self-stamped to the holder on a weapon type that isn't automatically
+	// reissued. CS2 self-stamps original_owner to the buyer on many purchases,
+	// not just leaving it 0 (confirmed empirically: guns bought during the buy
+	// window frequently show original_owner==buyer on their very first
+	// ItemPickup event, no preceding drop) -- so original_owner alone can't tell
+	// a fresh buy apart from a genuine self drop-then-regrab of a purchased
+	// weapon, which produces the identical signature. Both classify as pickupBuy:
+	// undercounting rare self-regrabs is far better than mislabeling the much
+	// more common fresh-buy case as a real pickup.
+	pickupBuy pickupKind = iota
+	// pickupReal is a genuine transfer from a different player (original_owner
+	// set and not the holder).
+	pickupReal
+	// pickupReissue is CS2's automatic per-round knife/pistol handout, not a
+	// real player action at all.
+	pickupReissue
+)
+
+// classifyPickup resolves what an ItemPickup event represents, plus (for
+// pickupReal) the original owner and whether they were on the opposing side this
+// round. Shared by the live-round and freeze-window paths so the classification
+// rule lives in exactly one place.
+func (st *parseState) classifyPickup(e events.ItemPickup) (kind pickupKind, orig uint64, fromEnemy bool) {
+	orig = weaponOriginalOwner(e.Weapon)
+	if orig == 0 {
+		return pickupBuy, orig, false
+	}
+	if orig == e.Player.SteamID64 {
+		if reissueTypes[e.Weapon.Type] {
+			return pickupReissue, orig, false
+		}
+		return pickupBuy, orig, false
+	}
+	holderSide := st.roundSide(e.Player.SteamID64)
+	origSide := st.roundSide(orig)
+	return pickupReal, orig, holderSide != "" && origSide != "" && holderSide != origSide
+}
+
+// onItemPickup records a pickup: a weapon (gun or grenade) transferred from a
+// different player. A fresh buy or the automatic knife/pistol reissue produces no
+// Pickups entry, only an inventory-stream snapshot; see classifyPickup and
+// WeaponPickup for why a self-match can't reliably distinguish a buy from a
+// genuine self-regrab. Live round only; the freeze/buy window is
+// onFreezeItemPickup.
 func (st *parseState) onItemPickup(e events.ItemPickup) {
-	if st.parsed.GameState().IsWarmupPeriod() || !st.roundLive {
+	if st.parsed.GameState().IsWarmupPeriod() {
 		return
 	}
 	if e.Player == nil || e.Player.SteamID64 == 0 || e.Weapon == nil {
 		return
 	}
-
-	orig := weaponOriginalOwner(e.Weapon)
-	if orig == 0 || orig == e.Player.SteamID64 {
-		return // a buy or the holder's own gun, not a pickup
+	if !st.roundLive {
+		if st.framePhase == phaseFreeze {
+			st.onFreezeItemPickup(e)
+		}
+		return // post-round dead time: not a real buy/transfer window
 	}
 
-	// original owner on the opposing side this round means an enemy gun.
-	holderSide := st.roundSide(e.Player.SteamID64)
-	origSide := st.roundSide(orig)
-	fromEnemy := holderSide != "" && origSide != "" && holderSide != origSide
+	kind, orig, fromEnemy := st.classifyPickup(e)
+	switch kind {
+	case pickupReissue:
+		return
+	case pickupBuy:
+		st.snapshotInventories("buy")
+		return
+	}
 
 	st.track(e.Player.SteamID64, e.Player.Name)
 	st.pending.Pickups = append(st.pending.Pickups, model.WeaponPickup{
@@ -634,6 +697,42 @@ func (st *parseState) onItemPickup(e events.ItemPickup) {
 		FromEnemy:     fromEnemy,
 		TMs:           st.roundMs(),
 	})
+	st.snapshotInventories("pickup")
+}
+
+// onFreezeItemPickup is onItemPickup's counterpart for the upcoming round's
+// buy/freeze window, where st.pending (if set at all, it's nil before the demo's
+// first round) still belongs to the round that just ended. Real transfers are
+// buffered for flushPickupPreroll to attach to the new round at go-live.
+//
+// FromEnemy here resolves sides via st.pendingPlayers, which during freeze still
+// reflects the round that just ended: correct except for the one freeze window
+// right after a side switch (halftime/OT start), where it's stale until the next
+// live round's roster refresh (onFreezetimeEnd -> roundRoster). Unlike this
+// function, onItemPickup's live-round roundSide calls have no such window:
+// pendingPlayers is already fresh for the whole live phase by the time roundLive
+// flips true.
+func (st *parseState) onFreezeItemPickup(e events.ItemPickup) {
+	kind, orig, fromEnemy := st.classifyPickup(e)
+	switch kind {
+	case pickupReissue:
+		return
+	case pickupBuy:
+		st.snapshotInventoriesPreroll("buy")
+		return
+	}
+
+	st.track(e.Player.SteamID64, e.Player.Name)
+	st.pickupPreroll = append(st.pickupPreroll, bufferedPickup{
+		abs: st.parsed.CurrentTime(),
+		pk: model.WeaponPickup{
+			SteamID:       e.Player.SteamID64,
+			Weapon:        e.Weapon.String(),
+			OriginalOwner: orig,
+			FromEnemy:     fromEnemy,
+		},
+	})
+	st.snapshotInventoriesPreroll("pickup")
 }
 
 // shotStat returns the per-round shot tally for a (shooter, weapon) pair,

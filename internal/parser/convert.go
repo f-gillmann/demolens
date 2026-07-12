@@ -255,7 +255,7 @@ func (st *parseState) loadoutWeapons(weapons map[common.EquipmentType]*heldItem,
 	for t, a := range weapons {
 		out = append(out, model.LoadoutWeapon{
 			Name:          t.String(),
-			Class:         csdata.EquipmentClassName(t.Class()),
+			Class:         csdata.EquipmentClassName(t),
 			Count:         a.count,
 			Value:         weaponValue(a.w, owner),
 			OriginalOwner: weaponOriginalOwner(a.w),

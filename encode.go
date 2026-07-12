@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 
+	"github.com/andybalholm/brotli"
 	"github.com/f-gillmann/demolens/v2/model"
 )
 
@@ -29,4 +30,16 @@ func WriteGzJSON(w io.Writer, m *model.Match, minify bool) (err error) {
 		}
 	}()
 	return WriteJSON(gw, m, minify)
+}
+
+// WriteBrJSON brotli-compresses the JSON encoding of the match to w, at brotli's
+// default quality level. minify is passed through to WriteJSON.
+func WriteBrJSON(w io.Writer, m *model.Match, minify bool) (err error) {
+	bw := brotli.NewWriter(w)
+	defer func() {
+		if cerr := bw.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+	return WriteJSON(bw, m, minify)
 }

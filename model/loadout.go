@@ -12,7 +12,7 @@ type Loadout struct {
 // LoadoutWeapon is one grouped gun in a loadout or inventory change.
 type LoadoutWeapon struct {
 	Name          string `json:"name"`
-	Class         string `json:"class"` // pistol / smg / heavy / rifle
+	Class         string `json:"class"` // pistol / smg / heavy / rifle / sniper
 	Count         int    `json:"count"`
 	Value         int    `json:"value"`                           // 0 for the free spawn pistol
 	OriginalOwner uint64 `json:"original_owner,omitempty,string"` // raw m_OriginalOwnerXuid Low+High

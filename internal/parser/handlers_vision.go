@@ -2,17 +2,62 @@ package parser
 
 import (
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/f-gillmann/demolens/v2/model"
 	"github.com/golang/geo/r3"
+	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
 // below this many candidate sightlines the goroutine dispatch costs more than the
 // parallel los work saves, so run them inline
 const losParallelThreshold = 2
+
+// playingStable returns the playing participants deduplicated by SteamID64 in a
+// deterministic order, so per-frame accumulators keyed by SteamID64 resolve the same
+// way on every run. Playing() ranges the library's userID-keyed player map, whose
+// iteration order is randomized per process. On a mid-match reconnect the same
+// SteamID64 briefly lives under two userIDs at once: the reconnecting player gets a
+// fresh controller entity while the stale entry lingers until its controller entity
+// is destroyed. Both pass the connected+entity filter, so a SteamID-keyed last write
+// would otherwise land on a random one of the two. The tiebreak uses EntityID, not
+// UserID: the library masks UserID to a single byte (userID &= 0xff in its
+// getOrCreatePlayer), so it wraps on any process with 256+ total connect events
+// (routine on a long-running/persistent server) and "higher UserID" can then pick the
+// stale entity instead of the reconnected one. EntityID is unmasked and strictly
+// increasing per new controller entity, so the reconnected player's entity always
+// has the higher value. SteamID64 0 is bots, which share the id legitimately, so
+// those entries are never collapsed.
+func playingStable(gs dem.GameState) []*common.Player {
+	src := gs.Participants().Playing()
+	out := make([]*common.Player, 0, len(src))
+	idx := make(map[uint64]int, len(src))
+	for _, pl := range src {
+		if pl.SteamID64 == 0 {
+			out = append(out, pl)
+			continue
+		}
+		if i, ok := idx[pl.SteamID64]; ok {
+			if pl.EntityID > out[i].EntityID {
+				out[i] = pl
+			}
+			continue
+		}
+		idx[pl.SteamID64] = len(out)
+		out = append(out, pl)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].SteamID64 != out[j].SteamID64 {
+			return out[i].SteamID64 < out[j].SteamID64
+		}
+		return out[i].EntityID < out[j].EntityID
+	})
+	return out
+}
 
 // onPlayerFrames samples player pos + state each frame into the round's positions
 // stream (opt-in), throttled so output stays bounded. The capture spans the last
@@ -35,7 +80,7 @@ func (st *parseState) onPlayerFrames(_ events.FrameDone) {
 	if st.framePhase == phaseFreeze {
 		// buffer the upcoming round's freeze; pending here is the previous round, so
 		// do not touch it. into is a placeholder, rebased negative at the flush.
-		for _, pl := range gs.Participants().Playing() {
+		for _, pl := range playingStable(gs) {
 			if side := sideString(pl.Team); side != "" {
 				st.prerollBuf = append(st.prerollBuf, bufferedFrame{abs: cur, frame: st.playerFrame(pl, side, 0)})
 			}
@@ -52,7 +97,7 @@ func (st *parseState) onPlayerFrames(_ events.FrameDone) {
 		return
 	}
 	into := (cur - st.roundStart).Milliseconds()
-	for _, pl := range gs.Participants().Playing() {
+	for _, pl := range playingStable(gs) {
 		if side := sideString(pl.Team); side != "" {
 			streams.Positions = append(streams.Positions, st.playerFrame(pl, side, into))
 		}
@@ -70,7 +115,7 @@ func (st *parseState) onBuyWindowClose(_ events.FrameDone) {
 	}
 	st.econ.buyWindowClosed = true
 
-	for _, pl := range st.parsed.GameState().Participants().Playing() {
+	for _, pl := range playingStable(st.parsed.GameState()) {
 		if sideString(pl.Team) == "" || st.econ.buyCaptured[pl.SteamID64] {
 			continue
 		}
@@ -89,7 +134,7 @@ func (st *parseState) onBuyWindowClose(_ events.FrameDone) {
 // velocity, so kill speed comes from this frame-to-frame delta.
 func (st *parseState) onSpeedSample(_ events.FrameDone) {
 	cur := st.parsed.CurrentTime()
-	for _, pl := range st.parsed.GameState().Participants().Playing() {
+	for _, pl := range playingStable(st.parsed.GameState()) {
 		pos := toPosition(pl.Position())
 		if prev, ok := st.frames.lastPos[pl.SteamID64]; ok {
 			if dt := (cur - st.frames.lastPosTime[pl.SteamID64]).Seconds(); dt > 0 {
@@ -137,7 +182,7 @@ func (st *parseState) onSighting(_ events.FrameDone) {
 			delete(st.vision.byID, k)
 		}
 	}
-	for _, pl := range st.parsed.GameState().Participants().Playing() {
+	for _, pl := range playingStable(st.parsed.GameState()) {
 		if !pl.IsAlive() {
 			continue
 		}

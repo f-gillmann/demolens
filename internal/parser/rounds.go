@@ -41,7 +41,7 @@ func roundKill(e events.Kill, into time.Duration) model.RoundKill {
 	}
 	if e.Weapon != nil {
 		rk.Weapon = e.Weapon.String()
-		rk.WeaponClass = csdata.EquipmentClassName(e.Weapon.Class())
+		rk.WeaponClass = csdata.EquipmentClassName(e.Weapon.Type)
 	}
 	rk.Kind = killKind(e)
 	// killer is null for non-player kinds (bomb/world/suicide have no player killer
@@ -125,7 +125,7 @@ func positionOf(p *common.Player) model.Position {
 // economy. The freeze-end Loadout doubles as the round's inventory snapshot.
 func (st *parseState) roundRoster(gs dem.GameState) map[uint64]*model.RoundPlayer {
 	roster := map[uint64]*model.RoundPlayer{}
-	for _, pl := range gs.Participants().Playing() {
+	for _, pl := range playingStable(gs) {
 		side := sideString(pl.Team)
 		if side == "" {
 			continue

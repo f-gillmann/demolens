@@ -1,9 +1,7 @@
 package parser
 
 import (
-	"fmt"
 	"math"
-	"os"
 	"strings"
 
 	"github.com/f-gillmann/demolens/v2/internal/csdata"
@@ -93,7 +91,7 @@ func (st *parseState) groundItemSampleTick() bool {
 }
 
 // groundItemClass is the ground_items class token for a dropped world entity: guns
-// keep their gun class (pistol/smg/heavy/rifle), the loose c4 is "c4", a knife is
+// keep their gun class (pistol/smg/heavy/rifle/sniper), the loose c4 is "c4", a knife is
 // "knife", and grenades and the zeus carry "grenade"/"equipment" from their broad
 // equipment class. Kept local to ground items so the kill weapon_class and loadout
 // class (both csdata.EquipmentClassName) stay unchanged.
@@ -108,7 +106,7 @@ func groundItemClass(w *common.Equipment) string {
 	case w.Class() == common.EqClassEquipment:
 		return "equipment" // the zeus (and any other equipment-class droppable)
 	default:
-		return csdata.EquipmentClassName(w.Class()) // gun classes
+		return csdata.EquipmentClassName(w.Type) // gun classes
 	}
 }
 
@@ -184,7 +182,6 @@ func (st *parseState) onDataTablesParsed(_ events.DataTablesParsed) {
 	if sc == nil {
 		return
 	}
-	_, _ = fmt.Fprintf(os.Stderr, "demolens: defuse-kit world entity class = %s\n", sc.Name())
 	sc.OnEntityCreated(st.onKitCreated)
 }
 
@@ -250,7 +247,7 @@ func (st *parseState) nearestDeadCT(pos r3.Vector) uint64 {
 	const kitDropRadius = 200.0
 	var best uint64
 	bestD := kitDropRadius
-	for _, pl := range st.parsed.GameState().Participants().Playing() {
+	for _, pl := range playingStable(st.parsed.GameState()) {
 		if pl == nil || pl.IsAlive() || sideString(pl.Team) != "CT" {
 			continue
 		}
@@ -280,7 +277,7 @@ func (st *parseState) pollKits(sample bool) {
 		}
 	}
 	const pickupRadius = 150.0
-	for _, pl := range st.parsed.GameState().Participants().Playing() {
+	for _, pl := range playingStable(st.parsed.GameState()) {
 		if pl == nil {
 			continue
 		}

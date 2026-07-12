@@ -277,7 +277,7 @@ func seesTarget(shooter, target *common.Player, mesh *geom.Mesh, smokes map[int]
 // shooterHasVision is true if any living enemy is in vision (per seesTarget).
 // This is the gate for spotted accuracy, counter-strafe and spray.
 func shooterHasVision(gs dem.GameState, shooter *common.Player, mesh *geom.Mesh, smokes map[int]activeSmoke, eng map[[2]uint64]*engagement, fovHalfDeg float64, now time.Duration, recentSightingMs float64) bool {
-	for _, e := range gs.Participants().Playing() {
+	for _, e := range playingStable(gs) {
 		if e.Team == shooter.Team || !e.IsAlive() {
 			continue
 		}

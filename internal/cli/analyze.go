@@ -12,7 +12,7 @@ import (
 
 func analyzeCmd() *cobra.Command {
 	var out string
-	var minify, gzipOut bool
+	var minify, gzipOut, brotliOut bool
 	var opts demolens.Options
 	opts.Calibration = demolens.DefaultCalibration()
 
@@ -21,6 +21,9 @@ func analyzeCmd() *cobra.Command {
 		Short: "analyze a demo and print JSON",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			if gzipOut && brotliOut {
+				return fmt.Errorf("--gzip and --brotli are mutually exclusive")
+			}
 			resolveStreams(cmd, &opts)
 
 			file, err := os.Open(args[0])
@@ -40,8 +43,11 @@ func analyzeCmd() *cobra.Command {
 				path = out
 				if info, serr := os.Stat(out); serr == nil && info.IsDir() {
 					name := result.FileHash + ".json"
-					if gzipOut {
+					switch {
+					case gzipOut:
 						name += ".gz"
+					case brotliOut:
+						name += ".br"
 					}
 					path = filepath.Join(out, name)
 				}
@@ -53,9 +59,12 @@ func analyzeCmd() *cobra.Command {
 				w = outFile
 			}
 
-			if gzipOut {
+			switch {
+			case gzipOut:
 				err = demolens.WriteGzJSON(w, result, minify)
-			} else {
+			case brotliOut:
+				err = demolens.WriteBrJSON(w, result, minify)
+			default:
 				err = demolens.WriteJSON(w, result, minify)
 			}
 			if err != nil {
@@ -71,6 +80,7 @@ func analyzeCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&out, "out", "o", "", "write JSON to a file path, or a directory to name it <file_hash>.json (default: stdout)")
 	cmd.Flags().BoolVar(&minify, "minify", false, "compact JSON output (no indentation)")
 	cmd.Flags().BoolVar(&gzipOut, "gzip", false, "gzip-compress the output (adds .gz when -o names by file_hash)")
+	cmd.Flags().BoolVar(&brotliOut, "brotli", false, "brotli-compress the output (adds .br when -o names by file_hash)")
 	cmd.Flags().StringVar(&opts.Tier, "tier", "full", "stream preset: core (no streams), detail (positions/shots/grenade-paths), full (all streams)")
 	cmd.Flags().BoolVarP(&opts.PlayerFrames, "positions", "p", false, "override the 'positions' stream (per-frame player positions + state, large output)")
 	cmd.Flags().BoolVarP(&opts.Shots, "shots", "s", false, "override the 'shots' stream (per-shot shooter geometry, large output)")

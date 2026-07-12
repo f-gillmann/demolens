@@ -54,10 +54,16 @@ var WeaponPrice = map[common.EquipmentType]int{
 	common.EqG3SG1:        5000,
 }
 
-// EquipmentClassName returns the lowercase class token for a gun class, or "" for
-// any non-gun class.
-func EquipmentClassName(c common.EquipmentClass) string {
-	switch c {
+// EquipmentClassName returns the lowercase class token for a gun type, or "" for
+// any non-gun type. The scoped snipers (AWP, SSG08, SCAR-20, G3SG1) return
+// "sniper"; the lib buckets them under EqClassRifle with the assault rifles, so a
+// class check alone cannot tell them apart.
+func EquipmentClassName(t common.EquipmentType) string {
+	switch t {
+	case common.EqAWP, common.EqSSG08, common.EqScar20, common.EqG3SG1:
+		return "sniper"
+	}
+	switch t.Class() {
 	case common.EqClassPistols:
 		return "pistol"
 	case common.EqClassSMG:

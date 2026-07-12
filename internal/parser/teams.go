@@ -12,7 +12,7 @@ import (
 // the side they started on. Sides flip at halftime, so we set identity once and
 // leave it alone. sideToTeam is the current side-to-team mapping.
 func captureTeams(gs dem.GameState, players map[uint64]*model.Player, sideToTeam map[common.Team]string) {
-	for _, pl := range gs.Participants().Playing() {
+	for _, pl := range playingStable(gs) {
 		rec, ok := players[pl.SteamID64]
 		if !ok {
 			rec = &model.Player{SteamID: pl.SteamID64, Name: pl.Name}

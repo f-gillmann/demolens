@@ -20,6 +20,12 @@ Inside a round, events and time series are split. The top-level round arrays
 `round.streams` holds the opt-in columnar time series: `positions`, `shots`, `grenade_paths`, `inventory`, `ground_items`.
 If it isn't sampled over time, it isn't in `streams`.
 
+Two of those pairs look redundant but aren't. `grenades` (the event: who threw what, when, and its outcome)
+and `streams.grenade_paths` (the time series: the flight trajectory and bounce points) describe the same
+throw at two different resolutions; they join on `grenade_id`. `pickups` (true transfers only, see below)
+and `streams.ground_items` (every item-on-the-ground stint, including ones nobody ever picked back up) both
+touch "who's holding what," but `ground_items` is the complete record; `pickups` is a derived subset of it.
+
 ## Tiers and streams
 
 `--tier` picks a stream preset: `core` turns all five streams off, `detail` turns on
@@ -83,6 +89,12 @@ The sample period is `1 / positions_sample_hz`.
 
 `ground_items[].positions` uses the same pattern with its own column list
 (`meta.output.ground_item_positions_fields`: t_ms, x, y, z, hold_frames), so a resting item collapses to one tuple.
+
+Each `ground_items[]` entry is one on-the-ground stint, not just its position track. `dropped_at_ms` /
+`picked_up_at_ms` bracket the stint (`picked_up_at_ms` absent means it's still down at round end);
+`is_initial` marks round-start spawn state (`dropped_at_ms == 0`) rather than a real mid-round drop;
+`last_owner` is who dropped it; `on_death` marks a drop forced by that owner dying. C4 rides in this
+same stream: the bomb is one physical object that changes hands like any other dropped item.
 
 ## Smoke voxel clouds
 
@@ -150,8 +162,26 @@ one of `eco` / `semi_eco` / `semi_buy` / `full_buy`.
 grouped with counts and values, plus `total_value`. The sibling `equipment_value` is a different capture:
 buy-window close, capped at death.
 
-**round.pickups** lists true pickups only, where the gun's `original_owner` differs from the holder.
-`from_enemy` flags cross-team grabs.
+**round.pickups** lists real transfers between players: a grab whose `original_owner` is set and differs
+from the holder. `from_enemy` flags a cross-team grab. Fires during the live round and during the
+buy/freeze window preceding it, so a teammate handing off a gun before go-live is captured too (negative
+`t_ms`, same freeze convention as everywhere else). A self-match (`original_owner` == holder) never
+appears here: CS2 stamps `original_owner` to the buyer on many fresh purchases, not just leaving it unset,
+so a self-match can mean a fresh buy, the automatic per-round knife/pistol reissue, or (rarely) a genuine
+self drop-then-regrab, and those can't be told apart from `original_owner` alone. All three surface only
+in `streams.inventory`'s `buy`/`pickup` phase tags below, not as a `round.pickups` entry, since fabricating
+a re-grab entry here would risk mislabeling the far more common fresh-buy case.
+
+**streams.inventory** is a per-player loadout change log, not a per-tick dump: an entry is written
+when a player's holdings actually change. Snapshots fire on the events `pickup` (a real transfer, mid-round
+or during the buy/freeze window; see round.pickups) and `buy` (a fresh acquisition, mid-round or during the
+buy/freeze window: a purchase, the automatic knife/pistol reissue, or a self-match that can't be
+distinguished from either, see round.pickups), plus the three phase checkpoints `first_contact`,
+`bomb_plant` and `round_end`; the `phase` field carries which one. A per-player fingerprint drops unchanged
+snapshots, so a checkpoint that repeats an already-logged loadout emits nothing. CS2 GOTV demos carry no
+drop event, so a dropped gun is not tagged at the drop instant; it surfaces at the next checkpoint (or,
+once someone grabs it, on their `pickup`). The freeze-time-end loadout lives separately in
+`round.players[].loadout`.
 
 **players[].counter_strafe** lives at the player top level, **not** inside `players[].stats`:
 `shots`, `stopped`, `stopped_rate_pct`, `avg_speed`. Mesh-gated, see above.

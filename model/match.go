@@ -37,7 +37,7 @@ type Meta struct {
 	ServerName        string     `json:"server_name"`
 	ClientName        string     `json:"client_name"`
 	ServerPlatform    string     `json:"server_platform"` // best guess: valve / esl / esea / faceit / ... / unknown
-	GameMode          string     `json:"game_mode"`       // competitive / premier / wingman / ... valve demos only, often empty
+	GameMode          string     `json:"game_mode"`       // competitive / premier / wingman / ... from the game_type/game_mode convars. When those are absent (Valve matchmaking demos) a fallback reports "competitive" only for a queued-matchmaking 5v5 MR12 game (premier is indistinguishable, same as the convar path) and leaves wingman/casual/non-Valve demos empty; it never overrides a convar-derived value.
 	DemoType          string     `json:"demo_type"`       // gotv / pov
 	WorkshopID        string     `json:"workshop_id"`     // addon id, empty for official maps
 	IsHltv            bool       `json:"is_hltv"`
@@ -75,15 +75,23 @@ type Round struct {
 	Damages      []Damage       `json:"damages"`              // live-round damage events, plus the post-round c4 detonation hits
 	ShotStats    []ShotStat     `json:"shot_stats,omitempty"` // core per-player-per-weapon aggregate
 	Grenades     Grenades       `json:"grenades"`             // typed buckets
-	Pickups      []WeaponPickup `json:"pickups,omitempty"`    // TRUE pickups only (original_owner != holder)
+	Pickups      []WeaponPickup `json:"pickups,omitempty"`    // real transfers between players; buys and same-player events are excluded, see WeaponPickup
 	Bomb         *Bomb          `json:"bomb,omitempty"`       // nil unless the bomb was planted
 
 	// Heavy opt-in detail. set only when at least one stream is on.
 	Streams *RoundStreams `json:"streams,omitempty"`
 }
 
-// WeaponPickup is one TRUE weapon pickup in a round: the picked-up gun's
-// original_owner differs from the holder who picked it up.
+// WeaponPickup is one item pickup in a round: a gun or grenade transferred from
+// another player (original_owner set and different from the holder). from_enemy
+// flags an enemy-team original owner. A self-match (original_owner == holder) is
+// never a WeaponPickup: it's either CS2's automatic per-round knife/pistol
+// reissue, a fresh purchase, or a genuine self drop-then-regrab, and those three
+// can't be reliably told apart from original_owner alone (CS2 stamps a freshly
+// bought gun's original_owner to the buyer on many purchases, not just leaving it
+// 0). All three instead surface only in streams.inventory's "buy"/"pickup" phase
+// tags, deliberately not fabricating a re-grab entry that would risk mislabeling
+// the far more common fresh-buy case.
 type WeaponPickup struct {
 	SteamID       uint64 `json:"steam_id,string"`
 	Weapon        string `json:"weapon"`
@@ -293,7 +301,7 @@ type RoundKill struct {
 	Assister         uint64    `json:"assister,omitempty,string"`
 	FlashAssister    uint64    `json:"flash_assister,omitempty,string"`
 	Weapon           string    `json:"weapon"`
-	WeaponClass      string    `json:"weapon_class"`         // pistol / smg / rifle / heavy / "" for bomb/world
+	WeaponClass      string    `json:"weapon_class"`         // pistol / smg / rifle / sniper / heavy / "" for bomb/world
 	Kind             string    `json:"kind"`                 // player / bomb / world / suicide
 	Collateral       bool      `json:"collateral,omitempty"` // 2+ kills shared the same (killer, time)
 	Headshot         bool      `json:"headshot"`

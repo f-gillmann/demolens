@@ -155,6 +155,20 @@ type bufferedFrame struct {
 	frame model.PlayerFrame
 }
 
+// bufferedPickup and bufferedInv are freezetime pickup/buy events and their
+// inventory-change entries, held until the round goes live (st.pending, during
+// freeze, still belongs to the round that just ended) then rebased to a negative
+// timestamp and attached to the new round at the pre-roll flush.
+type bufferedPickup struct {
+	abs time.Duration
+	pk  model.WeaponPickup
+}
+
+type bufferedInv struct {
+	abs time.Duration
+	ic  model.InventoryChange
+}
+
 // parseState holds the accumulator maps and per-parse state for one Parse run.
 // Per-subsystem accumulators live in sub-structs; core fields stay at the top.
 type parseState struct {
@@ -174,8 +188,16 @@ type parseState struct {
 	roundLive      bool           // true between freezetime end and round end
 	dmgToVictim    map[uint64]int // cumulative health damage per victim this round, capped at 100hp to fix the demoinfocs shotgun killing-pellet overcount
 
-	framePhase int             // positions-stream capture phase, see phase consts
-	prerollBuf []bufferedFrame // freezetime frames awaiting rebase onto the next round at go-live
+	framePhase     int               // positions-stream capture phase, see phase consts
+	prerollBuf     []bufferedFrame   // freezetime frames awaiting rebase onto the next round at go-live
+	pickupPreroll  []bufferedPickup  // freezetime pickups/buys awaiting rebase onto the next round at go-live
+	invPreroll     []bufferedInv     // freezetime inventory snapshots awaiting rebase onto the next round at go-live
+	prerollInvHash map[uint64]string // snapshotInventoriesPreroll's own fingerprint dedup, separate from lastInvHash
+	// so the old round's round_end snapshot (checked against lastInvHash inside
+	// finalize, before the reset below) never sees the new round's freeze-time
+	// fingerprints. Merged into lastInvHash by flushPickupPreroll once the old
+	// round is finalized and reset, so the new round's own live-phase snapshots
+	// (first_contact) correctly skip re-emitting what freeze already logged.
 
 	// per-round accumulators, reset at freezetime end.
 	shotStats        map[uint64]map[string]*shotStatAcc // per (shooter, weapon) shots/spotted for round.shot_stats
@@ -285,6 +307,7 @@ func newParseState(parsed dem.Parser, opts Options, match *model.Match) *parseSt
 		dmgToVictim:      map[uint64]int{},
 		shotStats:        map[uint64]map[string]*shotStatAcc{},
 		lastInvHash:      map[uint64]string{},
+		prerollInvHash:   map[uint64]string{},
 		groundItemsOpen:  map[int]*model.DroppedItem{},
 		groundItemSerial: map[int]int{},
 		kitOpen:          map[int]*kitStint{},

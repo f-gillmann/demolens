@@ -106,7 +106,7 @@ func (st *parseState) onFreezetimeEnd(_ events.RoundFreezetimeEnd) {
 	st.finalize()
 
 	if st.match.Meta.GameMode == "" {
-		st.match.Meta.GameMode = gameMode(gs.Rules().ConVars())
+		st.match.Meta.GameMode = gameMode(gs.Rules())
 	}
 	if st.opts.MapsDir != "" && !st.vision.meshTried {
 		st.vision.meshTried = true
@@ -155,6 +155,7 @@ func (st *parseState) onFreezetimeEnd(_ events.RoundFreezetimeEnd) {
 	st.roundLive = true
 	st.framePhase = phaseLive
 	st.flushPreroll()
+	st.flushPickupPreroll()
 }
 
 // flushPreroll rebases the buffered freezetime frames onto the new round's timeline
@@ -179,6 +180,38 @@ func (st *parseState) flushPreroll() {
 	st.prerollBuf = nil
 }
 
+// flushPickupPreroll rebases the buffered freezetime pickups/buys and their
+// inventory-change entries onto the new round's timeline (negative time = before
+// go-live), appends them, and clears the buffers. Called once the new pending and
+// roundStart are set, right after flushPreroll. Each entry was fully built at
+// buffer time (fingerprint-deduped for inventory, side-resolved for FromEnemy);
+// only the timestamp is rewritten here.
+func (st *parseState) flushPickupPreroll() {
+	for _, b := range st.pickupPreroll {
+		b.pk.TMs = (b.abs - st.roundStart).Milliseconds()
+		st.pending.Pickups = append(st.pending.Pickups, b.pk)
+	}
+	st.pickupPreroll = nil
+
+	if len(st.invPreroll) > 0 {
+		if streams := st.ensureStreams(); streams != nil {
+			for _, b := range st.invPreroll {
+				b.ic.TMs = (b.abs - st.roundStart).Milliseconds()
+				streams.Inventory = append(streams.Inventory, b.ic)
+			}
+		}
+	}
+	st.invPreroll = nil
+
+	// seed the new round's (just-reset) lastInvHash with what freeze already
+	// established, so the round's first live-phase snapshot (first_contact) sees
+	// the real baseline instead of an empty map and skips re-emitting duplicates.
+	for id, fp := range st.prerollInvHash {
+		st.lastInvHash[id] = fp
+	}
+	st.prerollInvHash = map[uint64]string{}
+}
+
 // onRoundStart: the next round's freezetime starting means the exit window just
 // closed. record how long it was open.
 func (st *parseState) onRoundStart(_ events.RoundStart) {
@@ -191,6 +224,9 @@ func (st *parseState) onRoundStart(_ events.RoundStart) {
 	// (round) start for the round_start_t marker.
 	st.framePhase = phaseFreeze
 	st.prerollBuf = nil
+	st.pickupPreroll = nil
+	st.invPreroll = nil
+	st.prerollInvHash = map[uint64]string{}
 	st.freezeStart = st.parsed.CurrentTime()
 	if st.pending == nil || st.roundLive {
 		return
@@ -226,7 +262,7 @@ func (st *parseState) snapshotInventories(phase string) {
 		return
 	}
 	into := st.roundMs()
-	for _, pl := range st.parsed.GameState().Participants().Playing() {
+	for _, pl := range playingStable(st.parsed.GameState()) {
 		side := sideString(pl.Team)
 		if side == "" {
 			continue
@@ -238,6 +274,37 @@ func (st *parseState) snapshotInventories(phase string) {
 		}
 		st.lastInvHash[pl.SteamID64] = fp
 		streams.Inventory = append(streams.Inventory, ic)
+	}
+}
+
+// snapshotInventoriesPreroll is snapshotInventories' freeze-time counterpart. It
+// buffers entries with an absolute timestamp instead of writing st.pending.Streams,
+// since during freeze st.pending (if set at all) still belongs to the round that
+// just ended. flushPickupPreroll rebases and appends the buffer once the new round
+// opens. Dedup uses its own prerollInvHash, not lastInvHash: finalize's round_end
+// snapshot for the OLD round (checked against lastInvHash) runs after this freeze
+// buffering for the NEW round has already happened, so writing into the shared map
+// here would corrupt that check. flushPickupPreroll merges prerollInvHash into
+// lastInvHash after the old round is finalized and lastInvHash is reset, so the
+// new round's own live-phase snapshots (first_contact) see what freeze already
+// logged instead of re-emitting it.
+func (st *parseState) snapshotInventoriesPreroll(phase string) {
+	if !st.opts.Inventory {
+		return
+	}
+	abs := st.parsed.CurrentTime()
+	for _, pl := range playingStable(st.parsed.GameState()) {
+		side := sideString(pl.Team)
+		if side == "" {
+			continue
+		}
+		ic := st.inventorySnapshot(pl, side, phase, 0) // TMs rebased at flushPickupPreroll
+		fp := inventoryFingerprint(ic)
+		if st.prerollInvHash[pl.SteamID64] == fp {
+			continue
+		}
+		st.prerollInvHash[pl.SteamID64] = fp
+		st.invPreroll = append(st.invPreroll, bufferedInv{abs: abs, ic: ic})
 	}
 }
 
