@@ -199,6 +199,7 @@ func Parse(r io.Reader, opts Options) (_ *model.Match, err error) {
 	parsed.RegisterEventHandler(st.onBotTakenOver)
 
 	parsed.RegisterEventHandler(st.onRoundEnd)
+	parsed.RegisterEventHandler(st.onRankUpdate)
 
 	// CS2 GOTV demos tend to end on a truncated final fragment. gameplay is all
 	// there by then, so swallow ErrUnexpectedEndOfDemo.

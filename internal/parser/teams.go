@@ -6,7 +6,18 @@ import (
 	"github.com/f-gillmann/demolens/v2/model"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
+
+// onRankUpdate captures the end-of-match rank reveal. captureTeams snapshots
+// ranks at freezetime, so a rank the match itself produced (placement finished,
+// rank up/down) only ever appears in this message. Keyed by steam id because the
+// event's Player may already be nil for players who left after the last round.
+func (st *parseState) onRankUpdate(e events.RankUpdate) {
+	if rec, ok := st.players[e.SteamID64()]; ok && e.RankNew != 0 {
+		rec.RankAfter = e.RankNew
+	}
+}
 
 // captureTeams pins each player to a stable team id (A/B) and clan name based on
 // the side they started on. Sides flip at halftime, so we set identity once and

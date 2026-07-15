@@ -1269,6 +1269,10 @@
         "rank_if_tie": {
           "type": "integer"
         },
+        "rank_after": {
+          "type": "integer",
+          "description": "rank revealed by the end-of-match ServerRankUpdate message; unlike Rank it\nincludes a rank earned by the match itself (placement finished, rank up/down).\n0/absent when the demo ends before the reveal or the player stayed unranked."
+        },
         "crosshair_code": {
           "type": "string",
           "description": "shareable crosshair profile string"

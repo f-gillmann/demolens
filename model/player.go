@@ -83,9 +83,13 @@ type Player struct {
 	RankType        int `json:"rank_type"`
 	CompetitiveWins int `json:"competitive_wins"`
 	// rank predictions. Valve-MM/Premier only; 0/absent otherwise.
-	RankIfWin     int    `json:"rank_if_win,omitempty"`
-	RankIfLoss    int    `json:"rank_if_loss,omitempty"`
-	RankIfTie     int    `json:"rank_if_tie,omitempty"`
+	RankIfWin  int `json:"rank_if_win,omitempty"`
+	RankIfLoss int `json:"rank_if_loss,omitempty"`
+	RankIfTie  int `json:"rank_if_tie,omitempty"`
+	// rank revealed by the end-of-match ServerRankUpdate message; unlike Rank it
+	// includes a rank earned by the match itself (placement finished, rank up/down).
+	// 0/absent when the demo ends before the reveal or the player stayed unranked.
+	RankAfter     int    `json:"rank_after,omitempty"`
 	CrosshairCode string `json:"crosshair_code,omitempty"` // shareable crosshair profile string
 
 	WeaponStats map[string]WeaponStat `json:"weapon_stats"`
