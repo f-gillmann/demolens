@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "2.4.0"
+const version = "2.4.1"
 
 // closeFile closes f and reports the close error through err only if no earlier error was set.
 func closeFile(f *os.File, err *error) {
