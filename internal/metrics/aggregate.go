@@ -29,6 +29,10 @@ func aggregateRounds(m *model.Match) {
 			p.ScopedKills += rp.ScopedKills
 			p.PickedUpKills += rp.PickedUpKills
 			addUtility(&p.Utility, rp.Utility)
+
+			if r.MvpSteamID != 0 && rp.SteamID == r.MvpSteamID {
+				p.Mvps++
+			}
 		}
 	}
 }

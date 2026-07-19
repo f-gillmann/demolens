@@ -29,6 +29,7 @@ Kills and deaths come off kill events; post-round ones land in ExitKills/ExitDea
 Assists and flash assists also come off the kill event, headshots off its headshot flag.
 Damage is PlayerHurt health damage, capped at the victim's remaining HP.
 ShotsFired counts every gun shot, post-round exit fire included.
+Mvps sums the player's per-round MVPs (see the MVP field note in [output.md](output.md)).
 
 ## Basic ratios (`ratios.go`)
 
@@ -66,6 +67,22 @@ Rating 2.0 is proprietary, so what we compute is an approximation from a [public
 $$\text{Impact} = 2.13\,\text{KPR} + 0.42\,\text{APR} - 0.41$$
 
 $$\text{Rating 2.0} = 0.0073\,\text{KAST} + 0.3591\,\text{KPR} - 0.5329\,\text{DPR} + 0.2372\,\text{Impact} + 0.0032\,\text{ADR} + 0.1587$$
+
+## Round swing (`roundswing.go`)
+
+Win-probability added: how much each kill moved your team's chance of winning the round.
+The same idea appears in public win-probability rating systems and in the academic [player-action valuation](https://arxiv.org/abs/2011.01324) work.
+The round's win probability moves only on kills, which keeps the metric zero-sum: the swing credited to the killing side equals the victim's loss.
+
+Win probability is tracked from the CT side as a function of the manpower state and the round's economy:
+
+$$P_\text{CT}(c, t) = \sigma\!\left(\operatorname{logit} W_{c,t} + 0.88\,(\tau_\text{CT} - \tau_\text{T}) - 0.76\,[\text{bomb planted}]\right)$$
+
+with $c$, $t$ the players alive per side, $\sigma$ the logistic function, $W_{c,t}$ an empirical CT-win table by manpower (from [public CS win-rate analysis](https://cryptm.org/posts/2020/06/12/csgo.html), cross-checked against our own corpus), $\tau$ the buy tier (`eco`/`semi_eco`/`semi_buy`/`full_buy` = 0..3), and $[\text{bomb planted}]$ a 0/1 flag once the bomb is down. The economy coefficient (0.88) and the plant shift (0.76, which makes post-plant retake kills worth more) are both measured from round outcomes in our own demo corpus. The result is clamped to $[0.02, 0.98]$; an elimination kill lands the round at exactly 0 or 1. Time, HP and map location are still not modeled, so this is a lighter cousin of the proprietary trained ratings.
+
+Each kill's swing is the win-probability change for the killing side, split by contribution: 35% to the killer, 30% across everyone on the killing side who damaged the victim (by damage share), 15% to a flash assister, and 20% to the teammate the kill traded. Absent roles renormalize, so the split always hands out exactly the full swing. The victim takes the whole negative. Non-player deaths (bomb/world/suicide) and team kills only dock the victim. Since win probability only moves on kills, a round decided by the bomb or the clock with the losing side still alive leaves a small gap between the last kill and the outcome that stays unattributed (its survivors are neither credited nor punished).
+
+`players[].stats.round_swing` is the per-player sum; `round_swing_per_round` divides it by rounds played, the figure comparable across players. `swing_breakdown` splits that sum by source (`kills` / `damage` / `flash` / `trade` / `deaths`, which sum to it) and by outcome (`in_won_rounds` + `in_lost_rounds`, which also sum to it). Per round, `win_prob_ct_start` is the CT win probability before the first kill, and each `kills[].win_prob_ct` (the value after that death) with `kills[].swing` continues the curve. As a sanity check, an opening kill is worth about +20% and a won 1v1 clutch about +50%, matching public reference figures. Per round the two teams' swings sum to zero, since win probability only moves on kills.
 
 ## Accuracy (`accuracy.go`)
 
@@ -143,7 +160,7 @@ The reported number is the median of what's left.
 
 For per-sighting samples $t_i$ (ms from first seeing the enemy to first damage):
 
-$$\text{TTD} = \mathrm{median}\big\{\, t_i \;:\; 165 \le t_i < 1600 \,\big\}$$
+$$\text{TTD} = \mathrm{median}\,\lbrace\, t_i : 165 \le t_i < 1600 \,\rbrace$$
 
 ### Crosshair placement
 

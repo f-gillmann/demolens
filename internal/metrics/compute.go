@@ -17,6 +17,7 @@ func Compute(m *model.Match) {
 	enrichKills(m)
 	computeClutches(m)
 	accuracyStats(m)
+	computeRoundSwing(m)
 
 	m.Stats.FlashPairs = flashMatrix(m)
 
@@ -30,6 +31,7 @@ func Compute(m *model.Match) {
 		p.Stats.DPR = perRound(float64(p.Deaths), rounds)
 		p.Stats.APR = perRound(float64(p.Assists), rounds)
 		p.Stats.HSPercent = headshotPercent(*p)
+		p.Stats.RoundSwingPerRound = perRound(p.Stats.RoundSwing, rounds)
 
 		if tc := trades[p.SteamID]; tc != nil {
 			tc.applyTo(p)

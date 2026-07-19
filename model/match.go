@@ -60,23 +60,26 @@ type Score struct {
 }
 
 type Round struct {
-	Number       int            `json:"number"` // 1-based
-	WinnerSide   string         `json:"winner_side"`
-	WinnerTeam   string         `json:"winner_team"`    // "A" or "B"
-	Reason       string         `json:"reason"`         // elimination / bomb_exploded / bomb_defused / time_expired
-	RoundStartMs int64          `json:"round_start_ms"` // freeze (round) start, ms; negative, relative to go-live at t=0
-	FreezeEndMs  int64          `json:"freeze_end_ms"`  // freeze end / round goes live, ms; always 0 (the round timeline origin)
-	RoundEndMs   int64          `json:"round_end_ms"`   // round-live start to round end, ms
-	PostRoundMs  int64          `json:"post_round_ms"`  // round end to next freeze, the exit window, ms
-	Economy      RoundEconomy   `json:"economy"`
-	Players      []RoundPlayer  `json:"players"`
-	Kills        []RoundKill    `json:"kills"`                // live-round kill timeline, enriched with duel semantics
-	ExitKills    []RoundKill    `json:"exit_kills,omitempty"` // post-round kills
-	Damages      []Damage       `json:"damages"`              // live-round damage events, plus the post-round c4 detonation hits
-	ShotStats    []ShotStat     `json:"shot_stats,omitempty"` // core per-player-per-weapon aggregate
-	Grenades     Grenades       `json:"grenades"`             // typed buckets
-	Pickups      []WeaponPickup `json:"pickups,omitempty"`    // real transfers between players; buys and same-player events are excluded, see WeaponPickup
-	Bomb         *Bomb          `json:"bomb,omitempty"`       // nil unless the bomb was planted
+	Number         int            `json:"number"` // 1-based
+	WinnerSide     string         `json:"winner_side"`
+	WinnerTeam     string         `json:"winner_team"`                   // "A" or "B"
+	Reason         string         `json:"reason"`                        // elimination / bomb_exploded / bomb_defused / time_expired
+	MvpSteamID     uint64         `json:"mvp_steam_id,string,omitempty"` // round MVP: the player whose scoreboard m_iMVPs ticked up. 0 if undetected
+	MvpReason      string         `json:"mvp_reason,omitempty"`          // why the MVP was awarded (m_eMvpReason): kills / bomb_plant / bomb_defuse / ace / ...
+	RoundStartMs   int64          `json:"round_start_ms"`                // freeze (round) start, ms; negative, relative to go-live at t=0
+	FreezeEndMs    int64          `json:"freeze_end_ms"`                 // freeze end / round goes live, ms; always 0 (the round timeline origin)
+	RoundEndMs     int64          `json:"round_end_ms"`                  // round-live start to round end, ms
+	PostRoundMs    int64          `json:"post_round_ms"`                 // round end to next freeze, the exit window, ms
+	WinProbCTStart float64        `json:"win_prob_ct_start"`             // CT win probability at round start (manpower + economy), before any kill; the kills[].win_prob_ct curve continues from here
+	Economy        RoundEconomy   `json:"economy"`
+	Players        []RoundPlayer  `json:"players"`
+	Kills          []RoundKill    `json:"kills"`                // live-round kill timeline, enriched with duel semantics
+	ExitKills      []RoundKill    `json:"exit_kills,omitempty"` // post-round kills
+	Damages        []Damage       `json:"damages"`              // live-round damage events, plus the post-round c4 detonation hits
+	ShotStats      []ShotStat     `json:"shot_stats,omitempty"` // core per-player-per-weapon aggregate
+	Grenades       Grenades       `json:"grenades"`             // typed buckets
+	Pickups        []WeaponPickup `json:"pickups,omitempty"`    // real transfers between players; buys and same-player events are excluded, see WeaponPickup
+	Bomb           *Bomb          `json:"bomb,omitempty"`       // nil unless the bomb was planted
 
 	// Heavy opt-in detail. set only when at least one stream is on.
 	Streams *RoundStreams `json:"streams,omitempty"`
@@ -316,6 +319,9 @@ type RoundKill struct {
 	VictimAirborne   bool      `json:"victim_airborne"`
 	KillerSpeed      float64   `json:"killer_speed,omitempty"`       // killer horizontal speed at the kill, u/s, derived; absent for non-player kills
 	KillerSpeedRatio float64   `json:"killer_speed_ratio,omitempty"` // speed / weapon max move speed. lower is better; absent for non-player kills
+
+	WinProbCT *float64 `json:"win_prob_ct,omitempty"` // CT win probability AFTER this death, [0,1]; set on live kills only (absent on exit_kills)
+	Swing     *float64 `json:"swing,omitempty"`       // win-prob shift this death caused, credited to the killing side; magnitude >=0; live kills only
 
 	// duel-semantics enrichment, derived in metrics.
 	Opening         bool        `json:"opening"`                    // true for the round's first kill (kills[0])

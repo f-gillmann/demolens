@@ -158,6 +158,23 @@ ring against the staggered `damage_type: "bomb"` hits without reverse-engineerin
 **round.economy** has one block per side (`CT` / `T`): `equipment_value` and `buy_type`,
 one of `eco` / `semi_eco` / `semi_buy` / `full_buy`.
 
+**MVP** (`players[].mvps`, `round.mvp_steam_id`, `round.mvp_reason`): the round MVP is the player whose
+scoreboard MVP count (`m_iMVPs`) ticks up that round. CS2 demos never fire the `round_mvp` event, but the
+prop is populated, so the increment is the signal. `players[].mvps` sums a player's round MVPs.
+`mvp_reason` decodes the `m_eMvpReason` prop into `kills` / `bomb_plant` / `bomb_defuse` / `ace` /
+`kills_three` / ...; the value labels are taken from the game's own win-panel script,
+[`hudwinpanel.js`](https://github.com/SteamTracking/GameTracking-CS2/blob/master/game/csgo/pak01_dir/panorama/scripts/hud/hudwinpanel.js)
+in the CS2 GameTracking repo. `mvp_steam_id` and `mvp_reason` are omitempty (absent when no MVP was detected).
+
+**Round swing** (`players[].stats.round_swing`, `players[].stats.round_swing_per_round`;
+`round.win_prob_ct_start`; `round.kills[].win_prob_ct` and `round.kills[].swing`): win-probability added,
+computed in [stats.md](stats.md). Win probability is CT-side; the T value is `1 - win_prob_ct` (no draws,
+so it is redundant and not stored). `win_prob_ct` and `swing` are set on live `kills` only and are **absent
+on `exit_kills`** (post-round, no swing). `win_prob_ct_start` is the round's CT win probability before the
+first kill; the `kills[].win_prob_ct` sequence continues that curve. `players[].stats.swing_breakdown`
+splits `round_swing` by source (`kills` / `damage` / `flash` / `trade` / `deaths` sum to it)
+and by outcome (`in_won_rounds` + `in_lost_rounds` sum to it); `deaths` is the negative eaten as a victim.
+
 **round.players[].loadout** is the freeze-time-end inventory snapshot: `weapons` / `grenades` / `equipment`,
 grouped with counts and values, plus `total_value`. The sibling `equipment_value` is a different capture:
 buy-window close, capped at death.

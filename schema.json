@@ -1153,6 +1153,10 @@
         "exit_deaths": {
           "type": "integer"
         },
+        "mvps": {
+          "type": "integer",
+          "description": "scoreboard MVP awards (m_iMVPs), summed from the per-round MVPs"
+        },
         "stats": {
           "$ref": "#/$defs/PlayerStats",
           "description": "Derived ratios / ratings / percentages, nested so they can't be confused with\nthe raw counts above. See PlayerStats."
@@ -1346,6 +1350,7 @@
         "shots_fired",
         "exit_kills",
         "exit_deaths",
+        "mvps",
         "stats",
         "crosshair_samples",
         "trade_kill_opportunities",
@@ -1426,6 +1431,18 @@
         "hltv_rating_2": {
           "type": "number",
           "description": "2.0, approximate"
+        },
+        "round_swing": {
+          "type": "number",
+          "description": "summed win-probability added (WPA) across the match; a zero-sum win-prob model"
+        },
+        "round_swing_per_round": {
+          "type": "number",
+          "description": "round_swing normalized per round played; the comparable per-round WPA"
+        },
+        "swing_breakdown": {
+          "$ref": "#/$defs/SwingBreakdown",
+          "description": "where round_swing came from"
         }
       },
       "additionalProperties": false,
@@ -1442,7 +1459,10 @@
         "head_accuracy_pct",
         "crosshair_placement",
         "hltv_rating_1",
-        "hltv_rating_2"
+        "hltv_rating_2",
+        "round_swing",
+        "round_swing_per_round",
+        "swing_breakdown"
       ],
       "description": "PlayerStats is the per-player nested derived block (players[].stats): the ratios, ratings and percentages computed FROM the player's raw counts."
     },
@@ -1483,6 +1503,14 @@
           "type": "string",
           "description": "elimination / bomb_exploded / bomb_defused / time_expired"
         },
+        "mvp_steam_id": {
+          "type": "string",
+          "description": "round MVP: the player whose scoreboard m_iMVPs ticked up. 0 if undetected"
+        },
+        "mvp_reason": {
+          "type": "string",
+          "description": "why the MVP was awarded (m_eMvpReason): kills / bomb_plant / bomb_defuse / ace / ..."
+        },
         "round_start_ms": {
           "type": "integer",
           "description": "freeze (round) start, ms; negative, relative to go-live at t=0"
@@ -1498,6 +1526,10 @@
         "post_round_ms": {
           "type": "integer",
           "description": "round end to next freeze, the exit window, ms"
+        },
+        "win_prob_ct_start": {
+          "type": "number",
+          "description": "CT win probability at round start (manpower + economy), before any kill; the kills[].win_prob_ct curve continues from here"
         },
         "economy": {
           "$ref": "#/$defs/RoundEconomy"
@@ -1567,6 +1599,7 @@
         "freeze_end_ms",
         "round_end_ms",
         "post_round_ms",
+        "win_prob_ct_start",
         "economy",
         "players",
         "kills",
@@ -1678,6 +1711,14 @@
         "killer_speed_ratio": {
           "type": "number",
           "description": "speed / weapon max move speed. lower is better; absent for non-player kills"
+        },
+        "win_prob_ct": {
+          "type": "number",
+          "description": "CT win probability AFTER this death, [0,1]; set on live kills only (absent on exit_kills)"
+        },
+        "swing": {
+          "type": "number",
+          "description": "win-prob shift this death caused, credited to the killing side; magnitude \u003e=0; live kills only"
         },
         "opening": {
           "type": "boolean",
@@ -2153,6 +2194,48 @@
         "flash_pairs"
       ],
       "description": "Stats groups the match-level aggregate blocks at the document root."
+    },
+    "SwingBreakdown": {
+      "properties": {
+        "kills": {
+          "type": "number",
+          "description": "the 35% final-kill share, taken as the killer"
+        },
+        "damage": {
+          "type": "number",
+          "description": "the 30% damage share, by health damage dealt to the victim"
+        },
+        "flash": {
+          "type": "number",
+          "description": "the 15% flash-assist share"
+        },
+        "trade": {
+          "type": "number",
+          "description": "the 20% share taken as the avenged (traded) teammate"
+        },
+        "deaths": {
+          "type": "number",
+          "description": "the negative eaten as a victim (\u003c= 0)"
+        },
+        "in_won_rounds": {
+          "type": "number"
+        },
+        "in_lost_rounds": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kills",
+        "damage",
+        "flash",
+        "trade",
+        "deaths",
+        "in_won_rounds",
+        "in_lost_rounds"
+      ],
+      "description": "SwingBreakdown splits a player's round_swing by source."
     },
     "TeamEconomy": {
       "properties": {

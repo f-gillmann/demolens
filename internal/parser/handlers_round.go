@@ -242,12 +242,34 @@ func (st *parseState) onRoundEnd(end events.RoundEnd) {
 	st.pending.WinnerTeam = st.sideToTeam[end.Winner]
 	st.pending.Reason = reasonString(end.Reason)
 	st.pending.RoundEndMs = st.roundMs()
+	st.captureRoundMVP()
 	st.roundEndTime = st.parsed.CurrentTime()
 	st.roundLive = false // post-round: damage/shots/exit-kills still count, K/D doesn't
 	st.framePhase = phasePost
 	// ground items keep polling through the post-round (exit-frag drops), so the
 	// open ground stints are flushed at finalize rather than here, to avoid re-opening
 	// and double-counting guns that stay down across round end.
+}
+
+// captureRoundMVP records the round MVP as the player whose scoreboard m_iMVPs
+// ticked up this round, with the reason from m_eMvpReason. CS2 demos never fire the
+// RoundMVPAnnouncement event, but the scoreboard prop is populated, so the round-end
+// increment is the signal. Runs at round end while the controller entities still hold
+// the fresh value; the prop is a running match total, so we diff against the last seen.
+func (st *parseState) captureRoundMVP() {
+	for _, pl := range playingStable(st.parsed.GameState()) {
+		cur, ok := propI(pl.Entity, "m_iMVPs")
+		if !ok {
+			continue
+		}
+		if cur > st.mvpPrev[pl.SteamID64] {
+			st.pending.MvpSteamID = pl.SteamID64
+			if r, ok := propI(pl.Entity, "m_eMvpReason"); ok {
+				st.pending.MvpReason = mvpReasonString(r)
+			}
+		}
+		st.mvpPrev[pl.SteamID64] = cur
+	}
 }
 
 // snapshotInventories appends an inventory-change-log entry per playing player for

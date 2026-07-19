@@ -210,6 +210,7 @@ type parseState struct {
 	kitModel         uint64                             // locked CBaseAnimGraph model handle of the dropped kit; later props with another model are ignored
 	kitModelSet      bool
 	deathTimes       map[uint64]int64 // victim steam_id -> death time (roundMs); resolves ground-item on_death by drop-to-death proximity, since the weapon un-owns ~1 tick before the death event fires
+	mvpPrev          map[uint64]int   // last-seen scoreboard m_iMVPs per player; a round-end increment marks that round's MVP (the RoundMVPAnnouncement event never fires in CS2 demos)
 
 	// A starts CT, B starts T. Flipped on every side switch so a player's A/B
 	// identity stays put when the sides swap.
@@ -313,6 +314,7 @@ func newParseState(parsed dem.Parser, opts Options, match *model.Match) *parseSt
 		kitOpen:          map[int]*kitStint{},
 		kitHad:           map[uint64]bool{},
 		deathTimes:       map[uint64]int64{},
+		mvpPrev:          map[uint64]int{},
 		sideToTeam: map[common.Team]string{
 			common.TeamCounterTerrorists: "A",
 			common.TeamTerrorists:        "B",

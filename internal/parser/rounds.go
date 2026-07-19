@@ -112,6 +112,43 @@ func reasonString(reason events.RoundEndReason) string {
 	}
 }
 
+// mvpReasonString maps CS2's m_eMvpReason enum to a label. The value list is the
+// switch in the game's own HUD script, game/csgo/pak01_dir/panorama/scripts/hud/
+// hudwinpanel.js (_SetMVP), so it stays authoritative across patches. Unknown
+// values return "" (the field is omitempty).
+func mvpReasonString(reason int) string {
+	switch reason {
+	case 1:
+		return "kills"
+	case 2:
+		return "bomb_plant"
+	case 3:
+		return "bomb_defuse"
+	case 4:
+		return "hostage_rescue"
+	case 5:
+		return "gungame"
+	case 7, 12:
+		return "winner"
+	case 9:
+		return "ace"
+	case 10:
+		return "inferno"
+	case 11:
+		return "blast"
+	case 13:
+		return "bomb_plant_clutch"
+	case 14:
+		return "bomb_defuse_clutch"
+	case 15:
+		return "kills_three"
+	case 16:
+		return "kills_four"
+	default:
+		return ""
+	}
+}
+
 // positionOf is a player's world position, which for a victim at the kill event
 // is the death spot. Zero Position when p is nil.
 func positionOf(p *common.Player) model.Position {
